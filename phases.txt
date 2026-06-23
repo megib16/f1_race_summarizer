@@ -1,0 +1,7 @@
+Phase 1: Data Foundation (Day 1)
+Goal: prove you can pull real F1 data before writing a single line of UI
+
+Install FastF1, test pulling a completed race (use 2025 or early 2026 race) -> Done   
+Print lap times, positions per lap, pit stops, results to console — confirm the data shape --> Done 
+Write fetcher.py — clean functions that return structured dicts/dataframes
+Save raw output to a local JSON file so you don't re-fetch every test run (FastF1 caches locally anyway but have a snapshot)
