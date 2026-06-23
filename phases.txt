@@ -7,26 +7,4 @@ Write fetcher.py — clean functions that return structured dicts/dataframes
 Save raw output to a local JSON file so you don't re-fetch every test run (FastF1 caches locally anyway but have a snapshot) 
 
 
-def load_session(year: int, race: str):
-    session = fastf1.get_session(year, race, "R")
-    session.load()
-    return session
-
-
-def get_race_results(session) -> list[dict]:
-    results = session.results[["Abbreviation", "FullName", "TeamName", "Position", "Time", "FastestLapTime"]]
-    return results.to_dict(orient="records")
-
-
-def get_lap_data(session) -> list[dict]:
-    laps = session.laps[["Driver", "LapNumber", "LapTime", "Position", "Compound", "PitInTime", "PitOutTime"]]
-    return laps.to_dict(orient="records")
-
-
-def get_pit_stops(session) -> list[dict]:
-    laps = session.laps
-    pit_stops = laps[laps["PitOutTime"].notna()][["Driver", "LapNumber", "Compound"]]
-    return pit_stops.to_dict(orient="records")
-
-
 
