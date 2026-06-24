@@ -40,6 +40,11 @@ if __name__ == "__main__":
     pit_stops = fetcher.get_pitstop_data(session)
 
     print(format_result_for_prompt(results, race_info)) 
-    print(format_pitstops_for_prompt(race_info, pit_stops))
+    print(format_pitstops_for_prompt(race_info, pit_stops)) 
+
+def generate_summary(race_info, results, pit_stops) -> str:   
+    return "Summary coming soon"  
+          
+
 
 
