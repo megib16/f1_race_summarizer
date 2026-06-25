@@ -1,5 +1,14 @@
-import fetcher 
-import summarizer 
+import fetcher
+import summarizer
+from database import SessionLocal
+from models import Race
+from models import DriverResult
+
+
+
+
+
+
 
 def run_pipeline(year, race): 
     session = fetcher.load_session(year,race) 
@@ -9,13 +18,33 @@ def run_pipeline(year, race):
     race_info = fetcher.get_race_info(session) 
     result_description = summarizer.format_result_for_prompt(result, race_info) 
     pitstop_description = summarizer.format_pitstops_for_prompt(race_info, pitstop)   
-    print(session) 
-    print(result) 
-    print(lap_data) 
-    print(pitstop) 
-    print(race_info) 
-    print(result_description) 
-    print(pitstop_description)  
+    
+    db = SessionLocal() 
+    race = Race(
+        name = race_info["name"], 
+        location=race_info["location"],
+        date=race_info["date"],
+        round=race_info["round"],
+        total_laps=race_info["total_laps"],
+        summary="TBD"
+    )  
+    db.add(race) 
+    db.flush()    
+    for driver in result: 
+        dr = DriverResult(
+            race_id = race.race_id, 
+            position = int(driver["Position"]), 
+            full_name = driver["FullName"], 
+            team = driver["TeamName"], 
+            time = driver["Time"],  
+
+
+        ) 
+        db.add(dr)
+    db.commit()
+    db.close()
+
+
 
     
     
@@ -26,10 +55,6 @@ if __name__ == "__main__":
     
 
 
-#Call fetcher.load_session(year, race) to get the session
-#Call all the fetcher functions to get results, laps, pit stops, race info
-#Call summarizer.generate_summary(...) to get the text summary
-#Save everything to storage (we'll add this later — for now just print it)
 
 
 
