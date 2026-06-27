@@ -1,2 +1,5 @@
 venv/
 cache/
+f1_races.db
+frontend/.next/
+frontend/node_modules/ 
