@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer } from "recharts";
 
 const API = "http://localhost:8000";
 
@@ -63,6 +64,7 @@ const POINTS: Record<number, number> = {
 export default function Home() {
   const [race, setRace] = useState<Race | null>(null);
   const [results, setResults] = useState<DriverResult[]>([]);
+  const [lapData, setLapData] = useState<{ driver: string, lap_number: number, position: number }[]>([]);
 
   useEffect(() => {
     fetch(`${API}/races`)
@@ -75,7 +77,9 @@ export default function Home() {
           .then((r) => r.json())
           .then((res: DriverResult[]) =>
             setResults(res.sort((a, b) => a.position - b.position))
+
           );
+        fetch(`${API}/races/${latest.race_id}/laps`).then((r) => r.json()).then((laps) => setLapData(laps))
       });
   }, []);
 
@@ -87,9 +91,18 @@ export default function Home() {
   const flLap = race?.fastest_lap_number;
   const flResult = results.find((d) => d.full_name.split(" ").pop()?.slice(0, 3).toUpperCase() === fl);
 
-  const cpoints = [...results].sort((a, b) => (POINTS[b.position] ?? 0) - (POINTS[a.position] ?? 0))
+  const cpoints = [...results].sort((a, b) => (POINTS[b.position] ?? 0) - (POINTS[a.position] ?? 0));
+  const lapMap: Record<number, Record<string, number>> = {};
+  for (const entry of lapData) {
+    if (!lapMap[entry.lap_number]) lapMap[entry.lap_number] = {};
+    lapMap[entry.lap_number][entry.driver] = entry.position;
+  }
+  const chartData = Object.entries(lapMap).map(([lap, positions]) => ({
+    lap: parseInt(lap),
+    ...positions,
+  }));
 
-
+  const drivers = [...new Set(lapData.map((d) => d.driver))];
 
 
   return (
@@ -148,13 +161,29 @@ export default function Home() {
 
         {/* Left: Chart */}
         {/* Left: Chart placeholder - to be built */}
-        <div className="flex-1">
-          <h2 className="text-2xl font-bold text-red-500 mb-4">RACE TIMELINE</h2>
-          <div className="bg-gray-800 rounded-lg h-96 flex items-center justify-center text-gray-500">
-            Chart coming soon
-          </div>
-        </div>
-
+        <ResponsiveContainer width="100%" height={384}>
+          <LineChart data={chartData}>
+            <XAxis dataKey="lap" stroke="#6b7280" />
+            <YAxis reversed domain={[1, 20]} stroke="#6b7280" />
+            <Tooltip content={({ active, payload, label }) => {
+              if (!active || !payload) return null;
+              const sorted = [...payload].sort((a, b) => (a.value as number) - (b.value as number));
+              return (
+                <div className="bg-gray-900 border border-gray-700 rounded p-2 text-xs">
+                  <p className="text-gray-400 mb-1">Lap {label}</p>
+                  {sorted.map((entry) => (
+                    <p key={String(entry.dataKey)} style={{ color: entry.color }}>
+                      P{entry.value as number} — {String(entry.dataKey)}
+                    </p>
+                  ))}
+                </div>
+              );
+            }} />
+            {drivers.map((d) => (
+              <Line key={d} type="monotone" dataKey={d} dot={false} strokeWidth={2} />
+            ))}
+          </LineChart>
+        </ResponsiveContainer>
 
 
 
@@ -187,6 +216,12 @@ export default function Home() {
         </div>
 
 
+        <div className="grid grid-rows-2"></div>
+
+
+
+        {/*onst [lapData, setLapData] = useState<{driver: string, lap_number: number, position: number}[]>([]);
+Then inside the useEffect, after setResults(...), add the fetch for laps. Try that and show me what you write!*/}
         <div className="w-96">
           <h2 className="text-2xl font-bold text-red-500 mb-4">Championship table</h2>
           <table className="w-full text-left text-sm border-collapse">
