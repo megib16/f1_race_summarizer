@@ -24,3 +24,14 @@ body {
   color: var(--foreground);
   font-family: Arial, Helvetica, sans-serif;
 }
+
+@font-face {
+  font-family: "BitcountSingle_Cursive-SemiBold";
+  src: url("/fonts/BitcountSingle_Cursive-SemiBold.ttf") format("truetype");
+
+}
+
+@font-face {
+  font-family: "Playfair";
+  src: url("/fonts/Playfair_9pt_SemiExpanded-SemiBold.ttf") format("truetype");
+}
