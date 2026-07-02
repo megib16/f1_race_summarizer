@@ -1,6 +1,8 @@
 import fastf1
+import os
 
-fastf1.Cache.enable_cache("cache")
+BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+fastf1.Cache.enable_cache(os.path.join(BASE_DIR, "cache"))
 
 def load_session(year: int, race: str):
     session = fastf1.get_session(year, race, "R")
@@ -8,13 +10,24 @@ def load_session(year: int, race: str):
     return session
 
 
-def get_race_results(session) -> list[dict]: 
-    results = session.results[["Abbreviation", "FullName", "TeamName", "Position", "Time"]] 
-    return results.to_dict(orient = "records")
+def get_race_results(session) -> list[dict]:
+    cols = ["Abbreviation", "FullName", "TeamName", "Position", "Time"]
+    if "FastestLapTime" in session.results.columns:
+        cols.append("FastestLapTime")
+    results = session.results[cols]
+    return results.to_dict(orient="records")
 
 def get_lap_data(session) -> list[dict]: 
     laps = session.laps[["Driver", "LapNumber", "LapTime", "Position", "Compound", "PitInTime", "PitOutTime"]] 
     return laps.to_dict(orient = "records") 
+
+def get_fastest_lap(session) -> dict:
+    laps = session.laps.pick_fastest()
+    return {
+        "driver": str(laps["Driver"]),
+        "lap_time": str(laps["LapTime"]),
+        "lap_number": int(laps["LapNumber"]),
+    }
 
 def get_pitstop_data(session) -> list[dict]:
     laps = session.laps
