@@ -72,6 +72,7 @@ const TEAMCOLOURS: Record<string, string> = {
   "Audi": "#D6D6D6",
 };
 
+
 export default function Home() {
   const [race, setRace] = useState<Race | null>(null);
   const [results, setResults] = useState<DriverResult[]>([]);
@@ -103,6 +104,7 @@ export default function Home() {
   const flLap = race?.fastest_lap_number;
   const flResult = results.find((d) => d.full_name.split(" ").pop()?.slice(0, 3).toUpperCase() === fl);
 
+
   const cpoints = [...results].sort((a, b) => (POINTS[b.position] ?? 0) - (POINTS[a.position] ?? 0));
   const lapMap: Record<number, Record<string, number>> = {};
   for (const entry of lapData) {
@@ -115,6 +117,16 @@ export default function Home() {
   }));
 
   const drivers = [...new Set(lapData.map((d) => d.driver))];
+  const teamForDriver: Record<string, string> = {
+  };
+  for (const r of results) {
+    const abbr = r.full_name.split(" ").pop()?.slice(0, 3).toUpperCase() ?? ""
+
+    teamForDriver[abbr] = TEAMCOLOURS[r.team] ?? "#ffffff"
+  }
+
+
+
 
   return (
     <div className="min-h-screen bg-[#212121] text-white p-8">
@@ -137,11 +149,11 @@ export default function Home() {
           <p className="text-gray-400 text-2xl">{p2?.team ?? ""}</p>
           <p className="text-gray-300 text-2xl mt-1">{p2 ? formatTime(p2.time, false) : ""}</p>
         </div>
-        <div style={{ fontFamily: "Playfair" }} className="bg-[#F3A32B] p-8 rounded-lg text-center w-80">
+        <div style={{ fontFamily: "Playfair" }} className="bg-[#DF2F3F] p-8 rounded-lg text-center w-80">
           <p className="text-yellow-300 text-5xl font-bold">🏆 RACE WINNER</p>
           <p className="text-4xl font-bold mt-1">{p1?.full_name ?? "-"}</p>
           <p style={{ color: TEAMCOLOURS[p1?.team ?? ""] }} className="text-2xl">{p1?.team ?? ""}</p>
-          <p className="text-yellow-400 text-2xl mt-2">{p1 ? formatTime(p1.time, true) : ""}</p>
+          <p className="text-[#F8ED07] text-2xl mt-2">{p1 ? formatTime(p1.time, true) : ""}</p>
         </div>
         <div style={{ fontFamily: "Playfair" }} className="bg-gray-800 p-6 rounded-lg text-center w-60">
           <p className="text-[#c7c7c7] text-4xl">3rd Place</p>
@@ -165,10 +177,10 @@ export default function Home() {
 
         {/* Top left: Chart */}
         <div>
-          <ResponsiveContainer width="100%" height={384}>
+          <ResponsiveContainer width="120%" >
             <LineChart data={chartData}>
               <XAxis dataKey="lap" stroke="#6b7280" />
-              <YAxis reversed domain={[1, 20]} stroke="#6b7280" />
+              <YAxis reversed domain={[1, 20]} stroke="#6b7280" width={40} />
               <Tooltip content={({ active, payload, label }) => {
                 if (!active || !payload) return null;
                 const sorted = [...payload].sort((a, b) => (a.value as number) - (b.value as number));
@@ -184,16 +196,16 @@ export default function Home() {
                 );
               }} />
               {drivers.map((d) => (
-                <Line key={d} type="monotone" dataKey={d} dot={false} strokeWidth={2} />
+                <Line key={d} type="monotone" dataKey={d} dot={false} strokeWidth={2} stroke={teamForDriver[d] ?? "#ffffff"} />
               ))}
             </LineChart>
           </ResponsiveContainer>
         </div>
 
         {/* Top right: Finishing order */}
-        <div style={{ fontFamily: "Playfair" }}>
-          <h2 className="text-3xl font-bold text-red-500 mb-4">FINISHING ORDER</h2>
-          <table className="w-full text-left text-sm border-collapse text-xl">
+        <div className="w-7/10 ml-auto" style={{ fontFamily: "Playfair" }}>
+          <h2 className="text-3xl text-center text- font-bold text-red-500 mb-4">FINISHING ORDER</h2>
+          <table className="text-left text-sm border-collapse text-xl">
             <thead>
               <tr className="text-gray-400 border-b border-gray-700">
                 <th className="py-2 pr-3">POS</th>

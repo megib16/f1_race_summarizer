@@ -32,4 +32,13 @@ class LapPosition(Base):
     race_id = Column(Integer, ForeignKey("races.race_id"))
     driver = Column(String)
     lap_number = Column(Integer)
-    position = Column(Integer)
+    position = Column(Integer) 
+
+class PitStop(Base): 
+    __tablename__ = "pitstops" 
+    id = Column(Integer, primary_key = True) 
+    race_id = Column(Integer, ForeignKey("races.race_id")) 
+    driver = Column(String) 
+    lap_numer = Column(Integer)
+    old_compound = Column(String) 
+    new_compound = Column(String)    
