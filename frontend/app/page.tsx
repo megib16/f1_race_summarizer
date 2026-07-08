@@ -16,6 +16,9 @@ interface Race {
   fastest_lap_driver: string;
   fastest_lap_time: string;
   fastest_lap_number: number;
+  air_temp: number;
+  track_temp: number;
+  rainfall: string;
 }
 
 interface DriverResult {
@@ -150,7 +153,7 @@ export default function Home() {
           <p className="text-gray-300 text-2xl mt-1">{p2 ? formatTime(p2.time, false) : ""}</p>
         </div>
         <div style={{ fontFamily: "Playfair" }} className="bg-[#DF2F3F] p-8 rounded-lg text-center w-80">
-          <p className="text-yellow-300 text-5xl font-bold">🏆 RACE WINNER</p>
+          <p className="text-white text-5xl font-bold">🏆 RACE WINNER</p>
           <p className="text-4xl font-bold mt-1">{p1?.full_name ?? "-"}</p>
           <p style={{ color: TEAMCOLOURS[p1?.team ?? ""] }} className="text-2xl">{p1?.team ?? ""}</p>
           <p className="text-[#F8ED07] text-2xl mt-2">{p1 ? formatTime(p1.time, true) : ""}</p>
@@ -171,6 +174,15 @@ export default function Home() {
         <p className="text-white text-xl">{flTime ? formatLapTime(flTime) : ""}</p>
         <p className="text-white text-xl">Lap: {flLap}</p>
       </div>
+
+      {/* Weather */}
+      {race && (
+        <div style={{ fontFamily: "Playfair" }} className="flex items-center justify-around bg-gray-800 rounded-lg px-8 py-3 mb-6 text-xl">
+          <p>🌡️ Air: {race.air_temp}°C</p>
+          <p>🏎️ Track: {race.track_temp}°C</p>
+          <p>{race.rainfall === "Yes" ? "🌧️ Rain" : "☀️ Dry"}</p>
+        </div>
+      )}
 
       {/* 2x2 grid layout */}
       <div className="grid grid-cols-2 gap-8 mt-6">
@@ -196,7 +208,7 @@ export default function Home() {
                 );
               }} />
               {drivers.map((d) => (
-                <Line key={d} type="monotone" dataKey={d} dot={false} strokeWidth={2} stroke={teamForDriver[d] ?? "#ffffff"} />
+                <Line key={d} style={{ fontFamily: "Playfair" }} type="monotone" dataKey={d} dot={false} strokeWidth={2} stroke={teamForDriver[d] ?? "#ffffff"} />
               ))}
             </LineChart>
           </ResponsiveContainer>
@@ -204,7 +216,7 @@ export default function Home() {
 
         {/* Top right: Finishing order */}
         <div className="w-7/10 ml-auto" style={{ fontFamily: "Playfair" }}>
-          <h2 className="text-3xl text-center text- font-bold text-red-500 mb-4">FINISHING ORDER</h2>
+          <h2 className="text-3xl font-bold text-red-500 mb-4">FINISHING ORDER</h2>
           <table className="text-left text-sm border-collapse text-xl">
             <thead>
               <tr className="text-gray-400 border-b border-gray-700">
@@ -232,7 +244,7 @@ export default function Home() {
           )}
         </div>
 
-        {/* Bottom left: Championship table */}
+        {/* Bottom left: Championship table 
         <div style={{ fontFamily: "Playfair" }}>
           <h2 className="text-3xl font-bold text-red-500 mb-4">CHAMPIONSHIP TABLE</h2>
           <table className="w-full text-left text-sm border-collapse text-xl">
@@ -258,14 +270,43 @@ export default function Home() {
               {showAllChampionship ? "▲ Show less" : "▼ Show all"}
             </button>
           )}
-        </div>
+        </div>*/}
 
         {/* Bottom right: Summary */}
-        <div>
-          <h2 className="text-3xl font-bold text-red-500 mb-4">RACE SUMMARY</h2>
-          <div className="bg-gray-800 rounded-lg p-6 text-gray-300 text-xl" style={{ fontFamily: "Playfair" }}>
+        <div style={{ width: "120%" }}>
+          <h2 style={{ fontFamily: "Playfair" }} className="text-3xl font-bold text-red-500 mb-4">RACE SUMMARY</h2>
+          <div className="bg-gray-800 rounded-lg p-6 text-gray-300 text-xl whitespace-pre-wrap " style={{ fontFamily: "Playfair" }}>
             {race?.summary ?? "Summary coming soon..."}
           </div>
+        </div>
+
+
+        {/* Bottom left: Championship table */}
+        <div className="w-7/10 ml-auto" style={{ fontFamily: "Playfair" }}>
+          <h2 className="text-3xl font-bold text-red-500 mb-4">CHAMPIONSHIP TABLE</h2>
+          <table className="w-full text-left text-sm border-collapse text-xl">
+            <thead>
+              <tr className="text-gray-400 border-b border-gray-700">
+                <th className="py-2 pr-3">DRIVER</th>
+                <th className="py-2 pr-3">TEAM</th>
+                <th className="py-2 pr-3">POINTS</th>
+              </tr>
+            </thead>
+            <tbody>
+              {(showAllChampionship ? cpoints : cpoints.slice(0, 10)).map((d) => (
+                <tr key={d.driver_id} className="border-b border-gray-800 hover:bg-gray-900">
+                  <td className="py-2 pr-3 font-bold">{d.full_name}</td>
+                  <td style={{ color: TEAMCOLOURS[d.team] }} className="py-2 pr-3">{d.team}</td>
+                  <td className="py-2 pr-3 text-gray-400">{POINTS[d.position] ?? 0}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          {cpoints.length > 10 && (
+            <button onClick={() => setShowAllChampionship(!showAllChampionship)} className="mt-2 text-gray-400 hover:text-white text-sm flex items-center gap-1">
+              {showAllChampionship ? "▲ Show less" : "▼ Show all"}
+            </button>
+          )}
         </div>
 
       </div>

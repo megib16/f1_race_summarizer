@@ -30,9 +30,29 @@ def get_fastest_lap(session) -> dict:
     }
 
 def get_pitstop_data(session) -> list[dict]:
-    laps = session.laps
-    pitstop = laps[laps["PitOutTime"].notna()][["Driver", "LapNumber", "Compound"]]
-    return pitstop.to_dict(orient="records")
+    laps = session.laps.sort_values(["Driver", "LapNumber"])
+    pit_laps = laps[laps["PitOutTime"].notna()]
+    results = []
+    for _, row in pit_laps.iterrows():
+        driver = row["Driver"]
+        lap_num = row["LapNumber"]
+        prev = laps[(laps["Driver"] == driver) & (laps["LapNumber"] < lap_num)]
+        old = str(prev.iloc[-1]["Compound"]) if len(prev) > 0 else ""
+        results.append({
+            "Driver": driver,
+            "LapNumber": int(lap_num),
+            "OldCompound": old,
+            "NewCompound": str(row["Compound"]),
+        })
+    return results
+
+def get_weather_data(session) -> dict:
+    weather = session.weather_data
+    return {
+        "air_temp": round(float(weather["AirTemp"].mean()), 1),
+        "track_temp": round(float(weather["TrackTemp"].mean()), 1),
+        "rainfall": bool(weather["Rainfall"].any()),
+    }
 
 def get_race_info(session) -> dict:
     event = session.event

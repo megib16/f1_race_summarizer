@@ -27,9 +27,27 @@ def format_pitstops_for_prompt(race_info, pit_stops):
     for lap in sorted_pitstops: 
             name = lap["Driver"]
             lap_number = lap["LapNumber"]  
-            compound = lap["Compound"] 
+            compound = lap["NewCompound"]
             lines.append(f"{name} pitted on lap {lap_number} ({compound})") 
-    return "\n".join(lines)
+    return "\n".join(lines) 
+
+def generate_summary(race_info, results, pit_stops) -> str:
+    client = anthropic.Anthropic()  # reads ANTHROPIC_API_KEY from env
+    race_text = format_result_for_prompt(results, race_info)
+    pit_text = format_pitstops_for_prompt(race_info, pit_stops)
+    prompt = f"""You are an F1 race analyst. Write a concise 2-3 short to mid length paragraph race summary.
+Focus on the winner, key battles, strategy, and notable moments. Break the output into smaller paragraphs for readability. 
+
+{race_text}
+
+{pit_text}"""
+    message = client.messages.create(
+        model="claude-sonnet-5",
+        max_tokens=800,
+        messages=[{"role": "user", "content": prompt}]
+    )
+    return message.content[0].text
+
 
 
 #Driver, LapNumber, Compound. Build a line for each one like: Russell pitted on lap 32 (Medium)  
@@ -42,8 +60,6 @@ if __name__ == "__main__":
     print(format_result_for_prompt(results, race_info)) 
     print(format_pitstops_for_prompt(race_info, pit_stops)) 
 
-def generate_summary(race_info, results, pit_stops) -> str:   
-    return "Summary coming soon"  
           
 
 

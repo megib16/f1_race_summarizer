@@ -15,6 +15,9 @@ class Race(Base):
     fastest_lap_driver = Column(String)
     fastest_lap_time = Column(String)
     fastest_lap_number = Column(Integer)
+    air_temp = Column(Float)
+    track_temp = Column(Float)
+    rainfall = Column(String)
 
 class DriverResult(Base):
     __tablename__ = "results"

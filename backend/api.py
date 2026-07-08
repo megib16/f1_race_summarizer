@@ -29,6 +29,9 @@ def get_races():
             "fastest_lap_driver": r.fastest_lap_driver,
             "fastest_lap_time": r.fastest_lap_time,
             "fastest_lap_number": r.fastest_lap_number,
+            "air_temp": r.air_temp,
+            "track_temp": r.track_temp,
+            "rainfall": r.rainfall,
         }
         for r in races
     ]

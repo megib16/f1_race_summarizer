@@ -1,7 +1,8 @@
 import fetcher
 import summarizer
 from database import SessionLocal
-from models import Race, DriverResult, LapPosition
+from models import Race, DriverResult, LapPosition, PitStop 
+
 
 
 def run_pipeline(year, race):
@@ -11,6 +12,7 @@ def run_pipeline(year, race):
     pitstop = fetcher.get_pitstop_data(session)
     race_info = fetcher.get_race_info(session)
     fastest_lap = fetcher.get_fastest_lap(session)
+    weather = fetcher.get_weather_data(session)
     result_description = summarizer.format_result_for_prompt(result, race_info)
     pitstop_description = summarizer.format_pitstops_for_prompt(race_info, pitstop)
 
@@ -21,10 +23,13 @@ def run_pipeline(year, race):
         date=race_info["date"],
         round=race_info["round"],
         total_laps=race_info["total_laps"],
-        summary="TBD",
+        summary= summarizer.generate_summary(race_info, result, pitstop) ,
         fastest_lap_driver=fastest_lap["driver"],
         fastest_lap_time=fastest_lap["lap_time"],
         fastest_lap_number=fastest_lap["lap_number"],
+        air_temp=weather["air_temp"],
+        track_temp=weather["track_temp"],
+        rainfall="Yes" if weather["rainfall"] else "No",
     )
     db.add(race_row)
     db.flush()
