@@ -28,7 +28,8 @@ def get_races():
             "summary": r.summary,
             "fastest_lap_driver": r.fastest_lap_driver,
             "fastest_lap_time": r.fastest_lap_time,
-            "fastest_lap_number": r.fastest_lap_number,
+            "fastest_lap_number": r.fastest_lap_number, 
+            "fastest_lap_team": r.fastest_lap_team, 
             "air_temp": r.air_temp,
             "track_temp": r.track_temp,
             "rainfall": r.rainfall,
@@ -67,5 +68,22 @@ def get_laps(race_id: int):
             "position": l.position,
         }
         for l in laps
-    ]
+    ] 
+
+@app.get("/races/{race_id}/pits") 
+def get_pitstops(race_id: int): 
+   from models import PitStop
+   db = SessionLocal() 
+   pits = db.query(PitStop).filter(PitStop.race_id == race_id).all() 
+   db.close() 
+   return [
+       {
+           "driver": p.driver,
+            "lap_number": p.lap_number,
+            "old_compound": p.old_compound, 
+            "new_compound": p.new_compound
+       } 
+       for p in pits
+   ]
+
 

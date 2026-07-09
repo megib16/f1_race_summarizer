@@ -26,13 +26,24 @@ def run_pipeline(year, race):
         summary= summarizer.generate_summary(race_info, result, pitstop) ,
         fastest_lap_driver=fastest_lap["driver"],
         fastest_lap_time=fastest_lap["lap_time"],
-        fastest_lap_number=fastest_lap["lap_number"],
+        fastest_lap_number=fastest_lap["lap_number"], 
+        fastest_lap_team=fastest_lap["team"], 
         air_temp=weather["air_temp"],
         track_temp=weather["track_temp"],
         rainfall="Yes" if weather["rainfall"] else "No",
     )
     db.add(race_row)
-    db.flush()
+    db.flush() 
+
+    for pit in pitstop: 
+        ps = PitStop(
+            race_id = race_row.race_id, 
+            driver = pit["Driver"], 
+            lap_number = int(pit["LapNumber"]), 
+            old_compound = pit["OldCompound"],
+            new_compound = pit["NewCompound"], 
+        ) 
+        db.add(ps) 
 
     for driver in result:
         dr = DriverResult(

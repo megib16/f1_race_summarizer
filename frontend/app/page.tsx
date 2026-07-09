@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer } from "recharts";
+import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, ReferenceDot } from "recharts";
 
 const API = "http://localhost:8000";
 
@@ -16,9 +16,11 @@ interface Race {
   fastest_lap_driver: string;
   fastest_lap_time: string;
   fastest_lap_number: number;
+  fastest_lap_team: string;
   air_temp: number;
   track_temp: number;
   rainfall: string;
+
 }
 
 interface DriverResult {
@@ -28,6 +30,13 @@ interface DriverResult {
   team: string;
   time: string;
   fastest_lap: string;
+}
+
+interface PitStop {
+  driver: string;
+  lap_number: number;
+  old_compound: string;
+  new_compound: string;
 }
 
 function formatLapTime(time: string): string {
@@ -75,6 +84,14 @@ const TEAMCOLOURS: Record<string, string> = {
   "Audi": "#D6D6D6",
 };
 
+const TYRECOLOURS: Record<string, string> = {
+  "SOFT": "#E8002D",
+  "MEDIUM": "#F8F02B",
+  "HARD": "#FFFFFF",
+  "INTERMEDIATE": "#1AFF00",
+  "WET": "#0B7FEF"
+}
+
 
 export default function Home() {
   const [race, setRace] = useState<Race | null>(null);
@@ -82,6 +99,7 @@ export default function Home() {
   const [lapData, setLapData] = useState<{ driver: string, lap_number: number, position: number }[]>([]);
   const [showAllResults, setShowAllResults] = useState(false);
   const [showAllChampionship, setShowAllChampionship] = useState(false);
+  const [pitstops, setPitStops] = useState<PitStop[]>([]);
 
   useEffect(() => {
     fetch(`${API}/races`)
@@ -96,7 +114,9 @@ export default function Home() {
             setResults(res.sort((a, b) => a.position - b.position))
           );
         fetch(`${API}/races/${latest.race_id}/laps`).then((r) => r.json()).then((laps) => setLapData(laps));
+        fetch(`${API}/races/${latest.race_id}/pits`).then((r) => r.json()).then((data) => setPitStops(data));
       });
+
   }, []);
 
   const p1 = results.find((d) => d.position === 1);
@@ -105,6 +125,7 @@ export default function Home() {
   const fl = race?.fastest_lap_driver;
   const flTime = race?.fastest_lap_time;
   const flLap = race?.fastest_lap_number;
+  const flTeam = race?.fastest_lap_team;
   const flResult = results.find((d) => d.full_name.split(" ").pop()?.slice(0, 3).toUpperCase() === fl);
 
 
@@ -149,7 +170,7 @@ export default function Home() {
         <div style={{ fontFamily: "Playfair" }} className="bg-gray-800 p-6 rounded-lg text-center w-60">
           <p className="text-[#C7C7C7] text-4xl">2nd Place</p>
           <p className="text-3xl font-bold mt-1">{p2?.full_name ?? "-"}</p>
-          <p className="text-gray-400 text-2xl">{p2?.team ?? ""}</p>
+          <p style={{ color: TEAMCOLOURS[p2?.team ?? ""] }} className="text-gray-400 text-2xl">{p2?.team ?? ""}</p>
           <p className="text-gray-300 text-2xl mt-1">{p2 ? formatTime(p2.time, false) : ""}</p>
         </div>
         <div style={{ fontFamily: "Playfair" }} className="bg-[#DF2F3F] p-8 rounded-lg text-center w-80">
@@ -161,7 +182,7 @@ export default function Home() {
         <div style={{ fontFamily: "Playfair" }} className="bg-gray-800 p-6 rounded-lg text-center w-60">
           <p className="text-[#c7c7c7] text-4xl">3rd Place</p>
           <p className="text-3xl font-bold mt-1">{p3?.full_name ?? "-"}</p>
-          <p className="text-gray-400 text-2xl">{p3?.team ?? ""}</p>
+          <p style={{ color: TEAMCOLOURS[p3?.team ?? ""] }} className="text-gray-400 text-2xl">{p3?.team ?? ""}</p>
           <p className="text-gray-300 text-2xl mt-1">{p3 ? formatTime(p3.time, false) : ""}</p>
         </div>
       </div>
@@ -170,7 +191,7 @@ export default function Home() {
       <div style={{ fontFamily: "Playfair" }} className="flex items-center justify-between bg-[#255F98] rounded-lg px-8 py-4 mb-6">
         <p className="text-white text-2xl">Fastest lap:</p>
         <p className="text-xl font-bold">{flResult?.full_name ?? "-"}</p>
-        <p className="text-gray-400 text-xl">{flResult?.team ?? ""}</p>
+        <p style={{ color: TEAMCOLOURS[flTeam ?? ""] }} className="text-xl font-bold ">{flResult?.team ?? ""}</p>
         <p className="text-white text-xl">{flTime ? formatLapTime(flTime) : ""}</p>
         <p className="text-white text-xl">Lap: {flLap}</p>
       </div>
@@ -193,22 +214,42 @@ export default function Home() {
             <LineChart data={chartData}>
               <XAxis dataKey="lap" stroke="#6b7280" />
               <YAxis reversed domain={[1, 20]} stroke="#6b7280" width={40} />
+
               <Tooltip content={({ active, payload, label }) => {
                 if (!active || !payload) return null;
                 const sorted = [...payload].sort((a, b) => (a.value as number) - (b.value as number));
                 return (
-                  <div className="bg-gray-900 border border-gray-700 rounded p-2 text-xs">
+                  <div style={{ fontFamily: "Playfair" }} className="bg-gray-900 border border-gray-700 rounded p-2 text-s">
                     <p className="text-gray-400 mb-1">Lap {label}</p>
                     {sorted.map((entry) => (
                       <p key={String(entry.dataKey)} style={{ color: entry.color }}>
                         P{entry.value as number} — {String(entry.dataKey)}
                       </p>
                     ))}
+
+                    {pitstops
+                      .filter(pit => pit.lap_number === label)
+                      .map((pit, i) => (
+                        <p key={i} style={{ color: TYRECOLOURS[pit.new_compound] ?? "#ffffff" }}>
+                          🔧 {pit.driver}: {pit.old_compound[0]}→{pit.new_compound[0]}
+                        </p>
+                      ))
+                    }
                   </div>
                 );
               }} />
               {drivers.map((d) => (
                 <Line key={d} style={{ fontFamily: "Playfair" }} type="monotone" dataKey={d} dot={false} strokeWidth={2} stroke={teamForDriver[d] ?? "#ffffff"} />
+              ))}
+              {pitstops.map((pit, i) => (
+                <ReferenceDot
+                  key={i}
+                  x={pit.lap_number}
+                  y={lapMap[pit.lap_number]?.[pit.driver]}
+                  r={5}
+                  fill={TYRECOLOURS[pit.new_compound] ?? "#ffffff"}
+                  stroke="none"
+                />
               ))}
             </LineChart>
           </ResponsiveContainer>
@@ -244,33 +285,7 @@ export default function Home() {
           )}
         </div>
 
-        {/* Bottom left: Championship table 
-        <div style={{ fontFamily: "Playfair" }}>
-          <h2 className="text-3xl font-bold text-red-500 mb-4">CHAMPIONSHIP TABLE</h2>
-          <table className="w-full text-left text-sm border-collapse text-xl">
-            <thead>
-              <tr className="text-gray-400 border-b border-gray-700">
-                <th className="py-2 pr-3">DRIVER</th>
-                <th className="py-2 pr-3">TEAM</th>
-                <th className="py-2 pr-3">POINTS</th>
-              </tr>
-            </thead>
-            <tbody>
-              {(showAllChampionship ? cpoints : cpoints.slice(0, 10)).map((d) => (
-                <tr key={d.driver_id} className="border-b border-gray-800 hover:bg-gray-900">
-                  <td className="py-2 pr-3 font-bold">{d.full_name}</td>
-                  <td style={{ color: TEAMCOLOURS[d.team] }} className="py-2 pr-3">{d.team}</td>
-                  <td className="py-2 pr-3 text-gray-400">{POINTS[d.position] ?? 0}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-          {cpoints.length > 10 && (
-            <button onClick={() => setShowAllChampionship(!showAllChampionship)} className="mt-2 text-gray-400 hover:text-white text-sm flex items-center gap-1">
-              {showAllChampionship ? "▲ Show less" : "▼ Show all"}
-            </button>
-          )}
-        </div>*/}
+
 
         {/* Bottom right: Summary */}
         <div style={{ width: "120%" }}>

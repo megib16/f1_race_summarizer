@@ -26,7 +26,8 @@ def get_fastest_lap(session) -> dict:
     return {
         "driver": str(laps["Driver"]),
         "lap_time": str(laps["LapTime"]),
-        "lap_number": int(laps["LapNumber"]),
+        "lap_number": int(laps["LapNumber"]), 
+        "team": str(laps["Team"])
     }
 
 def get_pitstop_data(session) -> list[dict]:
