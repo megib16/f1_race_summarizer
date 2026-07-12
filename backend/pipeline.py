@@ -1,11 +1,11 @@
 import fetcher
 import summarizer
 from database import SessionLocal
-from models import Race, DriverResult, LapPosition, PitStop 
+from models import Race, DriverResult, LapPosition, PitStop, SprintResult
 
 
 
-def run_pipeline(year, race): 
+def run_pipeline(year, race, has_sprint=False):
     db = None 
     try: 
         session = fetcher.load_session(year, race)
@@ -26,8 +26,9 @@ def run_pipeline(year, race):
             db.query(PitStop).filter(PitStop.race_id == existing.race_id).delete()
             db.query(DriverResult).filter(DriverResult.race_id == existing.race_id).delete()
             db.query(LapPosition).filter(LapPosition.race_id == existing.race_id).delete()
+            db.query(SprintResult).filter(SprintResult.race_id == existing.race_id).delete()
             db.delete(existing)
-            db.flush() 
+            db.flush()
 
         race_row = Race(
             name=race_info["name"],
@@ -62,6 +63,7 @@ def run_pipeline(year, race):
                 race_id=race_row.race_id,
                 position=int(driver["Position"]),
                 full_name=driver["FullName"],
+                abbreviation=str(driver.get("Abbreviation", "")),
                 team=driver["TeamName"],
                 time=str(driver["Time"]),
                 fastest_lap=str(driver.get("FastestLapTime", "")),
@@ -80,9 +82,22 @@ def run_pipeline(year, race):
             db.add(lp)
 
         db.commit()
-        
 
-    except Exception as e: 
+        if has_sprint:
+            sprint_session = fetcher.load_sprint_session(year, race)
+            if sprint_session:
+                sprint_results = fetcher.get_sprint_results(sprint_session)
+                for driver in sprint_results:
+                    sr = SprintResult(
+                        race_id=race_row.race_id,
+                        position=int(driver["Position"]),
+                        full_name=driver["FullName"],
+                        team=driver["TeamName"],
+                    )
+                    db.add(sr)
+                db.commit()
+
+    except Exception as e:
         print(f"Pipeline failed: {e}") 
         if db: 
             db.rollback() 
@@ -95,6 +110,15 @@ def run_pipeline(year, race):
 
 
 if __name__ == "__main__":
-    run_pipeline(2026, "Barcelona") 
-    run_pipeline(2026, "Austria") 
-    run_pipeline(2026, "Silverstone") 
+    run_pipeline(2026, "Australia")
+    run_pipeline(2026, "China", has_sprint=True)
+    run_pipeline(2026, "Japan")
+    run_pipeline(2026, "Miami", has_sprint=True)
+    run_pipeline(2026, "Canada", has_sprint=True)
+    run_pipeline(2026, "Barcelona")
+    run_pipeline(2026, "Monaco")
+    run_pipeline(2026, "Austria")
+    run_pipeline(2026, "Silverstone", has_sprint=True)
+
+    
+

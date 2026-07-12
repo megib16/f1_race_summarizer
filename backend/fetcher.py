@@ -5,9 +5,15 @@ BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 fastf1.Cache.enable_cache(os.path.join(BASE_DIR, "cache"))
 
 def load_session(year: int, race: str):
-    session = fastf1.get_session(year, race, "R")
-    session.load()
-    return session
+    try:
+        session = fastf1.get_session(year, race, "R")
+        session.load() 
+        return session
+ 
+    except Exception as e: 
+        print(f"Failed to load seesion!: {e}")
+    return None
+
 
 
 def get_race_results(session) -> list[dict]:
@@ -22,13 +28,19 @@ def get_lap_data(session) -> list[dict]:
     return laps.to_dict(orient = "records") 
 
 def get_fastest_lap(session) -> dict:
-    laps = session.laps.pick_fastest()
-    return {
-        "driver": str(laps["Driver"]),
-        "lap_time": str(laps["LapTime"]),
-        "lap_number": int(laps["LapNumber"]), 
-        "team": str(laps["Team"])
-    }
+    try:
+        laps = session.laps.pick_fastest()
+        return {
+            "driver": str(laps["Driver"]),
+            "lap_time": str(laps["LapTime"]),
+            "lap_number": int(laps["LapNumber"]), 
+            "team": str(laps["Team"])
+        } 
+    except Exception as e: 
+        print(f"No fastest lap recorded: {e}") 
+        return None     
+     
+    
 
 def get_pitstop_data(session) -> list[dict]:
     laps = session.laps.sort_values(["Driver", "LapNumber"])
@@ -54,6 +66,20 @@ def get_weather_data(session) -> dict:
         "track_temp": round(float(weather["TrackTemp"].mean()), 1),
         "rainfall": bool(weather["Rainfall"].any()),
     }
+
+def load_sprint_session(year: int, race: str):
+    try:
+        session = fastf1.get_session(year, race, "S")
+        session.load()
+        return session
+    except Exception as e:
+        print(f"No sprint session for {race}: {e}")
+    return None
+
+def get_sprint_results(session) -> list[dict]:
+    cols = ["FullName", "TeamName", "Position"]
+    results = session.results[cols]
+    return results.to_dict(orient="records")
 
 def get_race_info(session) -> dict:
     event = session.event

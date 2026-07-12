@@ -26,6 +26,7 @@ class DriverResult(Base):
     race_id = Column(Integer, ForeignKey("races.race_id"))
     position = Column(Integer)
     full_name = Column(String)
+    abbreviation = Column(String)
     team = Column(String)
     time = Column(String)
     fastest_lap = Column(String)
@@ -38,11 +39,19 @@ class LapPosition(Base):
     lap_number = Column(Integer)
     position = Column(Integer) 
 
-class PitStop(Base): 
-    __tablename__ = "pitstops" 
-    id = Column(Integer, primary_key = True) 
-    race_id = Column(Integer, ForeignKey("races.race_id")) 
-    driver = Column(String) 
+class PitStop(Base):
+    __tablename__ = "pitstops"
+    id = Column(Integer, primary_key = True)
+    race_id = Column(Integer, ForeignKey("races.race_id"))
+    driver = Column(String)
     lap_number = Column(Integer)
-    old_compound = Column(String) 
-    new_compound = Column(String)    
+    old_compound = Column(String)
+    new_compound = Column(String)
+
+class SprintResult(Base):
+    __tablename__ = "sprint_results"
+    id = Column(Integer, primary_key=True)
+    race_id = Column(Integer, ForeignKey("races.race_id"))
+    position = Column(Integer)
+    full_name = Column(String)
+    team = Column(String)

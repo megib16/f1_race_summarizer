@@ -39,6 +39,12 @@ interface PitStop {
   new_compound: string;
 }
 
+interface ChampionshipEntry {
+  full_name: string;
+  team: string;
+  points: number;
+}
+
 function formatLapTime(time: string): string {
   if (!time || time === "NaT" || time === "None" || time === "nan") return "-";
   const match = time.match(/(\d+) days (\d+):(\d+):(\d+)\.(\d+)/);
@@ -65,10 +71,6 @@ function formatTime(time: string, isWinner: boolean): string {
   return `+${m}:${s.toString().padStart(2, "0")}.${msPart}`;
 }
 
-const POINTS: Record<number, number> = {
-  1: 25, 2: 18, 3: 15, 4: 12, 5: 10,
-  6: 8, 7: 6, 8: 4, 9: 2, 10: 1
-};
 
 const TEAMCOLOURS: Record<string, string> = {
   "Mercedes": "#00D2BE",
@@ -101,6 +103,7 @@ export default function Home() {
   const [showAllChampionship, setShowAllChampionship] = useState(false);
   const [pitstops, setPitStops] = useState<PitStop[]>([]);
   const [allRaces, setAllRaces] = useState<Race[]>([]);
+  const [championship, setChampionship] = useState<ChampionshipEntry[]>([]);
 
   function loadRaceData(raceId: number) {
     fetch(`${API}/races/${raceId}/results`)
@@ -118,6 +121,7 @@ export default function Home() {
       .then((races: Race[]) => {
         if (races.length === 0) return;
         setAllRaces(races);
+        fetch(`${API}/championship`).then(r => r.json()).then(data => { if (Array.isArray(data)) setChampionship(data); });
         const latest = races[races.length - 1];
         setRace(latest);
         loadRaceData(latest.race_id);
@@ -135,7 +139,7 @@ export default function Home() {
   const flResult = results.find((d) => d.full_name.split(" ").pop()?.slice(0, 3).toUpperCase() === fl);
 
 
-  const cpoints = [...results].sort((a, b) => (POINTS[b.position] ?? 0) - (POINTS[a.position] ?? 0));
+
   const lapMap: Record<number, Record<string, number>> = {};
   for (const entry of lapData) {
     if (!lapMap[entry.lap_number]) lapMap[entry.lap_number] = {};
@@ -162,7 +166,7 @@ export default function Home() {
     <div className="min-h-screen bg-[#212121] text-white p-8">
 
       <div style={{ fontFamily: "Playfair" }} className="flex gap-2 justify-center mb-8 flex-wrap text-xl p-6">
-        {allRaces.map(r => (
+        {allRaces.slice(-3).map(r => (
           <button
             key={r.race_id}
             onClick={() => { setRace(r); loadRaceData(r.race_id); }}
@@ -327,16 +331,16 @@ export default function Home() {
               </tr>
             </thead>
             <tbody>
-              {(showAllChampionship ? cpoints : cpoints.slice(0, 10)).map((d) => (
-                <tr key={d.driver_id} className="border-b border-gray-800 hover:bg-gray-900">
+              {(showAllChampionship ? championship : championship.slice(0, 10)).map((d, i) => (
+                <tr key={i} className="border-b border-gray-800 hover:bg-gray-900">
                   <td className="py-2 pr-3 font-bold">{d.full_name}</td>
                   <td style={{ color: TEAMCOLOURS[d.team] }} className="py-2 pr-3">{d.team}</td>
-                  <td className="py-2 pr-3 text-gray-400">{POINTS[d.position] ?? 0}</td>
+                  <td className="py-2 pr-3 text-gray-400">{d.points}</td>
                 </tr>
               ))}
             </tbody>
           </table>
-          {cpoints.length > 10 && (
+          {championship.length > 10 && (
             <button onClick={() => setShowAllChampionship(!showAllChampionship)} className="mt-2 text-gray-400 hover:text-white text-sm flex items-center gap-1">
               {showAllChampionship ? "▲ Show less" : "▼ Show all"}
             </button>

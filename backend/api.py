@@ -1,9 +1,11 @@
 from fastapi import FastAPI 
 from fastapi.middleware.cors import CORSMiddleware
 from database import SessionLocal
-from models import Race, DriverResult
+from models import Race, DriverResult, SprintResult
 
-app = FastAPI()
+app = FastAPI() 
+POINTS = {1: 25, 2: 18, 3: 15, 4: 12, 5: 10, 6: 8, 7: 6, 8: 4, 9: 2, 10: 1}
+
 
 app.add_middleware(
     CORSMiddleware,
@@ -84,6 +86,27 @@ def get_pitstops(race_id: int):
             "new_compound": p.new_compound
        } 
        for p in pits
-   ]
+   ] 
+
+SPRINT_POINTS = {1: 8, 2: 7, 3: 6, 4: 5, 5: 4, 6: 3, 7: 2, 8: 1}
+
+@app.get("/championship")
+def get_championship():
+    db = SessionLocal()
+    results = db.query(DriverResult).all()
+    sprint_results = db.query(SprintResult).all()
+    db.close()
+    totals: dict = {}
+    for r in results:
+        if r.full_name not in totals:
+            totals[r.full_name] = {"full_name": r.full_name, "team": r.team, "points": 0}
+        totals[r.full_name]["points"] += POINTS.get(r.position, 0)
+    for sr in sprint_results:
+        if sr.full_name not in totals:
+            totals[sr.full_name] = {"full_name": sr.full_name, "team": sr.team, "points": 0}
+        totals[sr.full_name]["points"] += SPRINT_POINTS.get(sr.position, 0)
+    return sorted(totals.values(), key=lambda x: x["points"], reverse=True)
+
+
 
 
