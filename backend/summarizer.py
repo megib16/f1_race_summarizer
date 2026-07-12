@@ -32,21 +32,26 @@ def format_pitstops_for_prompt(race_info, pit_stops):
     return "\n".join(lines) 
 
 def generate_summary(race_info, results, pit_stops) -> str:
-    client = anthropic.Anthropic()  # reads ANTHROPIC_API_KEY from env
-    race_text = format_result_for_prompt(results, race_info)
-    pit_text = format_pitstops_for_prompt(race_info, pit_stops)
-    prompt = f"""You are an F1 race analyst. Write a concise 2-3 short to mid length paragraph race summary.
-Focus on the winner, key battles, strategy, and notable moments. Break the output into smaller paragraphs for readability. 
+    try:
+        client = anthropic.Anthropic()  # reads ANTHROPIC_API_KEY from env
+        race_text = format_result_for_prompt(results, race_info)
+        pit_text = format_pitstops_for_prompt(race_info, pit_stops)
+        prompt = f"""You are an F1 race analyst. Write a concise 2-3 short to mid length paragraph race summary.
+    Focus on the winner, key battles, strategy, and notable moments. Break the output into smaller paragraphs for readability. 
 
-{race_text}
+    {race_text}
 
-{pit_text}"""
-    message = client.messages.create(
-        model="claude-sonnet-5",
-        max_tokens=800,
-        messages=[{"role": "user", "content": prompt}]
-    )
-    return message.content[0].text
+    {pit_text}"""
+        message = client.messages.create(
+            model="claude-sonnet-5",
+            max_tokens=800,
+            messages=[{"role": "user", "content": prompt}]
+        )
+        return message.content[0].text 
+    except Exception as e: 
+        print(f"Failed to generate summary: {e}") 
+    return None 
+    
 
 
 
