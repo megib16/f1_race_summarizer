@@ -100,21 +100,27 @@ export default function Home() {
   const [showAllResults, setShowAllResults] = useState(false);
   const [showAllChampionship, setShowAllChampionship] = useState(false);
   const [pitstops, setPitStops] = useState<PitStop[]>([]);
+  const [allRaces, setAllRaces] = useState<Race[]>([]);
+
+  function loadRaceData(raceId: number) {
+    fetch(`${API}/races/${raceId}/results`)
+      .then(r => r.json())
+      .then((res: DriverResult[]) => setResults(res.sort((a, b) => a.position - b.position)));
+    fetch(`${API}/races/${raceId}/laps`).then(r => r.json()).then(setLapData);
+    fetch(`${API}/races/${raceId}/pits`).then(r => r.json()).then(setPitStops);
+  }
+
+
 
   useEffect(() => {
     fetch(`${API}/races`)
       .then((r) => r.json())
       .then((races: Race[]) => {
         if (races.length === 0) return;
+        setAllRaces(races);
         const latest = races[races.length - 1];
         setRace(latest);
-        fetch(`${API}/races/${latest.race_id}/results`)
-          .then((r) => r.json())
-          .then((res: DriverResult[]) =>
-            setResults(res.sort((a, b) => a.position - b.position))
-          );
-        fetch(`${API}/races/${latest.race_id}/laps`).then((r) => r.json()).then((laps) => setLapData(laps));
-        fetch(`${API}/races/${latest.race_id}/pits`).then((r) => r.json()).then((data) => setPitStops(data));
+        loadRaceData(latest.race_id);
       });
 
   }, []);
@@ -154,6 +160,19 @@ export default function Home() {
 
   return (
     <div className="min-h-screen bg-[#212121] text-white p-8">
+
+      <div style={{ fontFamily: "Playfair" }} className="flex gap-2 justify-center mb-8 flex-wrap text-xl p-6">
+        {allRaces.map(r => (
+          <button
+            key={r.race_id}
+            onClick={() => { setRace(r); loadRaceData(r.race_id); }}
+            className={`px-6 py-3 rounded text-xl ${race?.race_id === r.race_id ? "bg-red-600 text-white" : "bg-gray-700 text-gray-300 hover:bg-gray-600"}`}
+          >
+            {r.name}
+          </button>
+        ))}
+      </div>
+
 
       {/* Header */}
       <div className="mb-8 text-center">

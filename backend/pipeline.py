@@ -18,13 +18,17 @@ def run_pipeline(year, race):
         result_description = summarizer.format_result_for_prompt(result, race_info)
         pitstop_description = summarizer.format_pitstops_for_prompt(race_info, pitstop) 
     
-        
-        
 
+        db = SessionLocal() 
 
+        existing = db.query(Race).filter(Race.name == race_info["name"]).first()
+        if existing:
+            db.query(PitStop).filter(PitStop.race_id == existing.race_id).delete()
+            db.query(DriverResult).filter(DriverResult.race_id == existing.race_id).delete()
+            db.query(LapPosition).filter(LapPosition.race_id == existing.race_id).delete()
+            db.delete(existing)
+            db.flush() 
 
-
-        db = SessionLocal()
         race_row = Race(
             name=race_info["name"],
             location=race_info["location"],
@@ -84,10 +88,13 @@ def run_pipeline(year, race):
             db.rollback() 
          
     finally: 
-        db.close()     
+        if db: 
+            db.close()     
 
          
 
 
 if __name__ == "__main__":
-    run_pipeline(2026, "Australia")
+    run_pipeline(2026, "Barcelona") 
+    run_pipeline(2026, "Austria") 
+    run_pipeline(2026, "Silverstone") 

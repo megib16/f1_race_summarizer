@@ -47,7 +47,7 @@ def generate_summary(race_info, results, pit_stops) -> str:
             max_tokens=800,
             messages=[{"role": "user", "content": prompt}]
         )
-        return message.content[0].text 
+        return next(block.text for block in message.content if block.type == "text")
     except Exception as e: 
         print(f"Failed to generate summary: {e}") 
     return None 
@@ -57,7 +57,7 @@ def generate_summary(race_info, results, pit_stops) -> str:
 
 #Driver, LapNumber, Compound. Build a line for each one like: Russell pitted on lap 32 (Medium)  
 if __name__ == "__main__":
-    session = fetcher.load_session(2026, "Australia")
+    session = fetcher.load_session(2026, "Spain")
     results = fetcher.get_race_results(session)
     race_info = fetcher.get_race_info(session)
     pit_stops = fetcher.get_pitstop_data(session)
