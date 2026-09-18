@@ -3,7 +3,9 @@ import os
 import datetime
 
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-fastf1.Cache.enable_cache(os.path.join(BASE_DIR, "cache"))
+CACHE_DIR = os.path.join(BASE_DIR, "cache")
+os.makedirs(CACHE_DIR, exist_ok=True)
+fastf1.Cache.enable_cache(CACHE_DIR)
 
 def get_completed_races(year: int) -> list[dict]:
     """Races in the season schedule whose race day has already passed.
