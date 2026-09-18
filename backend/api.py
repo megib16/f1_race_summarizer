@@ -1,15 +1,20 @@
-from fastapi import FastAPI 
+import os
+
+from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from database import SessionLocal
 from models import Race, DriverResult, SprintResult
 
-app = FastAPI() 
+app = FastAPI()
 POINTS = {1: 25, 2: 18, 3: 15, 4: 12, 5: 10, 6: 8, 7: 6, 8: 4, 9: 2, 10: 1}
 
+ALLOWED_ORIGINS = ["http://localhost:3000"]
+if os.environ.get("FRONTEND_URL"):
+    ALLOWED_ORIGINS.append(os.environ["FRONTEND_URL"])
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000"],
+    allow_origins=ALLOWED_ORIGINS,
     allow_methods=["*"],
     allow_headers=["*"],
 )
