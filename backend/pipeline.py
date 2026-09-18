@@ -36,7 +36,7 @@ def run_pipeline(year, race, has_sprint=False):
             date=race_info["date"],
             round=race_info["round"],
             total_laps=race_info["total_laps"],
-            summary= summarizer.generate_summary(race_info, result, pitstop) ,
+            summary=None,
             fastest_lap_driver=fastest_lap["driver"],
             fastest_lap_time=fastest_lap["lap_time"],
             fastest_lap_number=fastest_lap["lap_number"], 
@@ -62,6 +62,7 @@ def run_pipeline(year, race, has_sprint=False):
             dr = DriverResult(
                 race_id=race_row.race_id,
                 position=int(driver["Position"]),
+                grid_position=int(driver["GridPosition"]) if str(driver.get("GridPosition")) != "nan" else None,
                 full_name=driver["FullName"],
                 abbreviation=str(driver.get("Abbreviation", "")),
                 team=driver["TeamName"],
@@ -102,23 +103,28 @@ def run_pipeline(year, race, has_sprint=False):
         if db: 
             db.rollback() 
          
-    finally: 
-        if db: 
-            db.close()     
+    finally:
+        if db:
+            db.close()
 
-         
+
+def run_pending_races(year):
+    """Fetch every completed race for the season that isn't in the DB yet."""
+    db = SessionLocal()
+    existing_rounds = {r.round for r in db.query(Race).all()}
+    db.close()
+
+    for event in fetcher.get_completed_races(year):
+        if event["round"] in existing_rounds:
+            continue
+        print(f"Fetching {event['name']} (round {event['round']})...")
+        run_pipeline(year, event["name"], has_sprint=event["has_sprint"])
+
+    summarizer.backfill_summaries()
 
 
 if __name__ == "__main__":
-    run_pipeline(2026, "Australia")
-    run_pipeline(2026, "China", has_sprint=True)
-    run_pipeline(2026, "Japan")
-    run_pipeline(2026, "Miami", has_sprint=True)
-    run_pipeline(2026, "Canada", has_sprint=True)
-    run_pipeline(2026, "Barcelona")
-    run_pipeline(2026, "Monaco")
-    run_pipeline(2026, "Austria")
-    run_pipeline(2026, "Silverstone", has_sprint=True)
+    run_pending_races(2026)
 
-    
+
 

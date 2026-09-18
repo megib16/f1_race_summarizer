@@ -25,6 +25,7 @@ class DriverResult(Base):
     driver_id = Column(Integer, primary_key=True)
     race_id = Column(Integer, ForeignKey("races.race_id"))
     position = Column(Integer)
+    grid_position = Column(Integer)
     full_name = Column(String)
     abbreviation = Column(String)
     team = Column(String)

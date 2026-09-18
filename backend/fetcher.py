@@ -1,8 +1,30 @@
 import fastf1
 import os
+import datetime
 
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 fastf1.Cache.enable_cache(os.path.join(BASE_DIR, "cache"))
+
+def get_completed_races(year: int) -> list[dict]:
+    """Races in the season schedule whose race day has already passed.
+
+    Compared by date only (not time) so a race that's still in progress
+    today never gets fetched with partial results.
+    """
+    schedule = fastf1.get_event_schedule(year)
+    today = datetime.date.today()
+    races = []
+    for _, event in schedule.iterrows():
+        if int(event["RoundNumber"]) == 0:
+            continue  # pre-season testing, not a race
+        if event["EventDate"].date() >= today:
+            continue
+        races.append({
+            "round": int(event["RoundNumber"]),
+            "name": event["EventName"],
+            "has_sprint": "sprint" in str(event["EventFormat"]).lower(),
+        })
+    return races
 
 def load_session(year: int, race: str):
     try:
@@ -17,7 +39,7 @@ def load_session(year: int, race: str):
 
 
 def get_race_results(session) -> list[dict]:
-    cols = ["Abbreviation", "FullName", "TeamName", "Position", "Time"]
+    cols = ["Abbreviation", "FullName", "TeamName", "Position", "GridPosition", "Time"]
     if "FastestLapTime" in session.results.columns:
         cols.append("FastestLapTime")
     results = session.results[cols]

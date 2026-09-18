@@ -1,0 +1,7 @@
+**/__pycache__
+**/*.pyc
+venv
+cache
+frontend/node_modules
+frontend/.next
+.git

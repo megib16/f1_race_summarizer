@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, ReferenceDot } from "recharts";
+import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, ReferenceDot, BarChart, Bar } from "recharts";
 
 const API = "http://localhost:8000";
 
@@ -26,7 +26,9 @@ interface Race {
 interface DriverResult {
   driver_id: number;
   position: number;
+  grid_position: number | null;
   full_name: string;
+  abbreviation: string;
   team: string;
   time: string;
   fastest_lap: string;
@@ -71,6 +73,45 @@ function formatTime(time: string, isWinner: boolean): string {
   return `+${m}:${s.toString().padStart(2, "0")}.${msPart}`;
 }
 
+
+function renderGridDelta(grid: number | null, finish: number) {
+  if (grid == null) return "-";
+  const delta = grid - finish;
+  if (delta === 0) return <span className="text-gray-400">–</span>;
+  if (delta > 0) return <span className="text-green-400">▲{delta}</span>;
+  return <span className="text-red-400">▼{Math.abs(delta)}</span>;
+}
+
+interface Stint {
+  compound: string;
+  laps: number;
+}
+
+interface StintBarProps {
+  x?: number;
+  y?: number;
+  width?: number;
+  height?: number;
+  payload?: Record<string, string | number>;
+}
+
+function buildStints(driverAbbr: string, pits: PitStop[], totalLaps: number): Stint[] {
+  const driverPits = pits.filter((p) => p.driver === driverAbbr).sort((a, b) => a.lap_number - b.lap_number);
+  if (driverPits.length === 0) return [{ compound: "UNKNOWN", laps: totalLaps }];
+
+  const stints: Stint[] = [];
+  let start = 1;
+  let currentCompound = driverPits[0].old_compound || "UNKNOWN";
+  for (const pit of driverPits) {
+    stints.push({ compound: currentCompound, laps: pit.lap_number - start + 1 });
+    start = pit.lap_number + 1;
+    currentCompound = pit.new_compound;
+  }
+  if (start <= totalLaps) {
+    stints.push({ compound: currentCompound, laps: totalLaps - start + 1 });
+  }
+  return stints;
+}
 
 const TEAMCOLOURS: Record<string, string> = {
   "Mercedes": "#00D2BE",
@@ -159,7 +200,22 @@ export default function Home() {
     teamForDriver[abbr] = TEAMCOLOURS[r.team] ?? "#ffffff"
   }
 
-
+  const stintsByDriver = results.map((r) => ({
+    result: r,
+    stints: buildStints(r.abbreviation, pitstops, race?.total_laps ?? 0),
+  }));
+  const maxStints = Math.max(0, ...stintsByDriver.map((s) => s.stints.length));
+  const stintChartData = stintsByDriver.map(({ result, stints }) => {
+    const row: Record<string, string | number> = {
+      driver: result.abbreviation,
+      fullName: result.full_name,
+    };
+    stints.forEach((stint, i) => {
+      row[`stint_${i}`] = stint.laps;
+      row[`stint_${i}_compound`] = stint.compound;
+    });
+    return row;
+  });
 
 
   return (
@@ -287,6 +343,8 @@ export default function Home() {
                 <th className="py-2 pr-3">POS</th>
                 <th className="py-2 pr-3">DRIVER</th>
                 <th className="py-2 pr-3">TEAM</th>
+                <th className="py-2 pr-3">GRID</th>
+                <th className="py-2 pr-3">+/-</th>
                 <th className="py-2">TIME</th>
               </tr>
             </thead>
@@ -296,6 +354,8 @@ export default function Home() {
                   <td className="py-2 pr-3 font-bold text-red-500">{d.position}</td>
                   <td className="py-2 pr-3 font-semibold">{d.full_name}</td>
                   <td style={{ color: TEAMCOLOURS[d.team] }} className="py-2 pr-3">{d.team}</td>
+                  <td className="py-2 pr-3 text-gray-300">{d.grid_position ?? "-"}</td>
+                  <td className="py-2 pr-3">{renderGridDelta(d.grid_position, d.position)}</td>
                   <td className="py-2 text-gray-300">{formatTime(d.time, d.position === 1)}</td>
                 </tr>
               ))}
@@ -348,6 +408,47 @@ export default function Home() {
         </div>
 
       </div>
+
+      {/* Tire strategy */}
+      {maxStints > 0 && (
+        <div className="mt-10">
+          <h2 style={{ fontFamily: "Playfair" }} className="text-3xl font-bold text-red-500 mb-4">TIRE STRATEGY</h2>
+          <ResponsiveContainer width="100%" height={stintChartData.length * 32 + 40}>
+            <BarChart data={stintChartData} layout="vertical" margin={{ left: 10 }}>
+              <XAxis type="number" domain={[0, race?.total_laps ?? 0]} stroke="#6b7280" />
+              <YAxis type="category" dataKey="driver" stroke="#6b7280" width={50} />
+              <Tooltip content={({ active, payload }) => {
+                if (!active || !payload || !payload[0]) return null;
+                const row = payload[0].payload as Record<string, string | number>;
+                return (
+                  <div style={{ fontFamily: "Playfair" }} className="bg-gray-900 border border-gray-700 rounded p-2 text-sm">
+                    <p className="text-gray-300 mb-1">{row.fullName}</p>
+                    {Array.from({ length: maxStints }).map((_, i) => (
+                      row[`stint_${i}`] ? (
+                        <p key={i} style={{ color: TYRECOLOURS[row[`stint_${i}_compound`] as string] ?? "#fff" }}>
+                          {row[`stint_${i}_compound`]}: {row[`stint_${i}`]} laps
+                        </p>
+                      ) : null
+                    ))}
+                  </div>
+                );
+              }} />
+              {Array.from({ length: maxStints }).map((_, i) => (
+                <Bar
+                  key={i}
+                  dataKey={`stint_${i}`}
+                  stackId="stack"
+                  shape={(props: StintBarProps) => {
+                    const { x = 0, y = 0, width = 0, height = 0, payload } = props;
+                    const compound = payload?.[`stint_${i}_compound`] as string | undefined;
+                    return <rect x={x} y={y} width={width} height={height} fill={TYRECOLOURS[compound ?? ""] ?? "#555"} stroke="#212121" strokeWidth={1} />;
+                  }}
+                />
+              ))}
+            </BarChart>
+          </ResponsiveContainer>
+        </div>
+      )}
     </div>
   );
 }
