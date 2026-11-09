@@ -20,3 +20,11 @@ def test_get_completed_races_filters_future_and_testing(monkeypatch):
     assert [r["round"] for r in races] == [1, 2]
     assert races[0]["has_sprint"] is False
     assert races[1]["has_sprint"] is True
+
+
+def test_empty_weather_and_nonfinite_values_are_unknown():
+    from types import SimpleNamespace
+    session = SimpleNamespace(weather_data=pd.DataFrame())
+    assert fetcher.get_weather_data(session) == {"air_temp": None, "track_temp": None, "rainfall": None}
+    session.weather_data = pd.DataFrame({"AirTemp": [float("nan")], "TrackTemp": [float("inf")], "Rainfall": [None]})
+    assert fetcher.get_weather_data(session) == {"air_temp": None, "track_temp": None, "rainfall": None}

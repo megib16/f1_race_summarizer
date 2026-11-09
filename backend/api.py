@@ -1,18 +1,55 @@
 import os
-from typing import Optional
+from typing import Optional, Annotated
+from contextlib import asynccontextmanager
 
-from fastapi import Depends, FastAPI, HTTPException
+from fastapi import Depends, FastAPI, HTTPException, Query, Request, Path
+from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
-import json
 
-from sqlalchemy import func
+from sqlalchemy import func, text
+from sqlalchemy.exc import SQLAlchemyError
 
-from database import SessionLocal
-from models import Race, DriverResult, SprintResult, LapPosition, PitStop, CircuitMap
+from database import SessionLocal, engine
+from migrate import check_schema
+from security import RateLimiter
+from schemas import CircuitData
+from pydantic import ValidationError
+from data_utils import finite_number
+from models import Race, DriverResult, SprintResult, LapPosition, PitStop, CircuitMap, IngestState
 
-app = FastAPI()
-POINTS = {1: 25, 2: 18, 3: 15, 4: 12, 5: 10, 6: 8, 7: 6, 8: 4, 9: 2, 10: 1}
-SPRINT_POINTS = {1: 8, 2: 7, 3: 6, 4: 5, 5: 4, 6: 3, 7: 2, 8: 1}
+@asynccontextmanager
+async def lifespan(app):
+    check_schema(engine)
+    yield
+
+
+app = FastAPI(lifespan=lifespan)
+limiter = RateLimiter(int(os.environ.get("API_REQUESTS_PER_MINUTE", "120")))
+
+
+@app.middleware("http")
+async def protect_requests(request: Request, call_next):
+    if request.method == "GET" and request.url.path != "/health":
+        key = request.client.host if request.client else "unknown"
+        if not limiter.allow(key):
+            return JSONResponse({"detail": "Too many requests"}, status_code=429, headers={"Retry-After": "60"})
+    response = await call_next(request)
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+    if request.method == "GET" and response.status_code == 200 and request.url.path != "/health":
+        response.headers["Cache-Control"] = "public, max-age=60"
+    return response
+
+
+@app.get("/health")
+def health():
+    # Startup checks schema compatibility; readiness also verifies connectivity.
+    try:
+        with engine.connect() as conn:
+            conn.execute(text("SELECT 1"))
+    except SQLAlchemyError:
+        return JSONResponse({"status": "unavailable"}, status_code=503)
+    return {"status": "ok"}
 
 ALLOWED_ORIGINS = ["http://localhost:3000"]
 if os.environ.get("FRONTEND_URL"):
@@ -42,10 +79,11 @@ def require_race(db, race_id: int) -> Race:
 
 
 @app.get("/races")
-def get_races(db=Depends(get_db)):
+def get_races(db=Depends(get_db), limit: Annotated[int, Query(ge=1, le=500)] = 500,
+              offset: Annotated[int, Query(ge=0, le=1000000)] = 0):
     # race_id order is insertion order, which is not chronological (a re-ingested
     # or backfilled race gets a later id), so never rely on it for "latest".
-    races = db.query(Race).order_by(Race.date, Race.round, Race.race_id).all()
+    races = db.query(Race).order_by(Race.date, Race.round, Race.race_id).offset(offset).limit(limit).all()
     return [
         {
             "race_id": r.race_id,
@@ -59,8 +97,8 @@ def get_races(db=Depends(get_db)):
             "fastest_lap_time": r.fastest_lap_time,
             "fastest_lap_number": r.fastest_lap_number,
             "fastest_lap_team": r.fastest_lap_team,
-            "air_temp": r.air_temp,
-            "track_temp": r.track_temp,
+            "air_temp": finite_number(r.air_temp),
+            "track_temp": finite_number(r.track_temp),
             "rainfall": r.rainfall,
         }
         for r in races
@@ -68,7 +106,7 @@ def get_races(db=Depends(get_db)):
 
 
 @app.get("/races/{race_id}/results")
-def get_results(race_id: int, db=Depends(get_db)):
+def get_results(race_id: Annotated[int, Path(ge=1, le=2147483647)], db=Depends(get_db)):
     require_race(db, race_id)
     results = (
         db.query(DriverResult)
@@ -87,19 +125,23 @@ def get_results(race_id: int, db=Depends(get_db)):
             "team": r.team,
             "time": r.time,
             "fastest_lap": r.fastest_lap,
+            "status": r.status,
+            "points": finite_number(r.points),
         }
         for r in results
     ]
 
 
 @app.get("/races/{race_id}/laps")
-def get_laps(race_id: int, db=Depends(get_db)):
+def get_laps(race_id: Annotated[int, Path(ge=1, le=2147483647)], db=Depends(get_db),
+             limit: Annotated[int, Query(ge=1, le=10000)] = 10000,
+             offset: Annotated[int, Query(ge=0, le=1000000)] = 0):
     require_race(db, race_id)
     laps = (
         db.query(LapPosition)
         .filter(LapPosition.race_id == race_id)
         .order_by(LapPosition.lap_number, LapPosition.position, LapPosition.driver)
-        .all()
+        .offset(offset).limit(limit).all()
     )
     return [
         {
@@ -112,7 +154,7 @@ def get_laps(race_id: int, db=Depends(get_db)):
 
 
 @app.get("/races/{race_id}/pits")
-def get_pitstops(race_id: int, db=Depends(get_db)):
+def get_pitstops(race_id: Annotated[int, Path(ge=1, le=2147483647)], db=Depends(get_db)):
     """Inferred pit-lane exits (lap_number is the out-lap), not measured stop durations."""
     require_race(db, race_id)
     pits = (
@@ -133,7 +175,7 @@ def get_pitstops(race_id: int, db=Depends(get_db)):
 
 
 @app.get("/races/{race_id}/circuit")
-def get_circuit_map(race_id: int, db=Depends(get_db)):
+def get_circuit_map(race_id: Annotated[int, Path(ge=1, le=2147483647)], db=Depends(get_db)):
     """Circuit outline and numbered corners for the race's season layout.
 
     Always one shape: `status` is "available" (with `map`) or "unavailable" (with a
@@ -147,21 +189,17 @@ def get_circuit_map(race_id: int, db=Depends(get_db)):
     if row.status != "available" or not row.data:
         return {"status": "unavailable", "reason": row.reason or "no_data", "map": None}
     try:
-        return {"status": "available", "reason": None, "map": json.loads(row.data), "source": row.source}
-    except ValueError:
+        return {"status": "available", "reason": None, "map": CircuitData.model_validate_json(row.data).model_dump(mode="json"), "source": row.source}
+    except (ValueError, ValidationError):
         return {"status": "unavailable", "reason": "corrupt_data", "map": None}
 
 
 @app.get("/championship")
-def get_championship(season: Optional[int] = None, through_round: Optional[int] = None, db=Depends(get_db)):
-    """Driver standings for one season (default: the latest season in the DB).
+def get_championship(season: Annotated[Optional[int], Query(ge=1950, le=2100)] = None, through_round: Annotated[Optional[int], Query(ge=0, le=100)] = None, db=Depends(get_db)):
+    """Standings use source-awarded points, including shortened races and penalties.
 
-    Races carry no year column, but `date` is always ISO `YYYY-MM-DD`, so the
-    season is taken from its prefix. Points follow the 2026 rules: no fastest-lap
-    point. `through_round` limits standings to rounds <= that round (standings
-    "after round N"). Race and sprint results are filtered identically.
-    Disqualifications and shortened-race half points are not modelled
-    because no race status is stored.
+    Legacy rows without awarded points require re-ingestion rather than guessed scoring.
+    Equal points use race finishing-position countback, then name if still tied.
     """
     if season is None:
         latest = db.query(func.max(Race.date)).scalar()
@@ -176,22 +214,39 @@ def get_championship(season: Optional[int] = None, through_round: Optional[int] 
             query = query.filter(Race.round <= through_round)
         return query
 
+    states = in_scope(db.query(IngestState).join(Race, Race.race_id == IngestState.race_id)).all()
+    if any(not s.race_complete or (s.sprint_required and not s.sprint_complete) for s in states):
+        raise HTTPException(status_code=409, detail="Standings are waiting for complete race and sprint classifications")
+
     # (date, round, 0=sprint/1=race) so the most recent team wins for drivers who switch.
     events = []
     race_rows = in_scope(
         db.query(DriverResult, Race.date, Race.round).join(Race, Race.race_id == DriverResult.race_id)
     ).all()
     for r, date, rnd in race_rows:
-        events.append(((date, rnd or 0, 1), r.full_name, r.team, POINTS.get(r.position, 0)))
+        events.append(((date, rnd or 0, 1), r))
     sprint_rows = in_scope(
         db.query(SprintResult, Race.date, Race.round).join(Race, Race.race_id == SprintResult.race_id)
     ).all()
     for s, date, rnd in sprint_rows:
-        events.append(((date, rnd or 0, 0), s.full_name, s.team, SPRINT_POINTS.get(s.position, 0)))
+        events.append(((date, rnd or 0, 0), s))
 
     totals: dict = {}
-    for _, name, team, points in sorted(events, key=lambda e: e[0]):
+    countback: dict = {}
+    for event, result in sorted(events, key=lambda e: e[0]):
+        name, team = result.full_name, result.team
+        disqualified = str(result.status or "").strip().lower() in {"disqualified", "excluded", "dsq"}
+        points = finite_number(result.points)
+        if disqualified:
+            points = 0
+        elif points is None:
+            raise HTTPException(status_code=409, detail="Re-ingest this season to load source-awarded points")
         entry = totals.setdefault(name, {"full_name": name, "team": team, "points": 0})
         entry["team"] = team
         entry["points"] += points
-    return sorted(totals.values(), key=lambda x: (-x["points"], x["full_name"]))
+        finishes = countback.setdefault(name, [0] * 100)
+        if event[2] == 1 and not disqualified and result.position and 1 <= result.position <= 100:
+            finishes[result.position - 1] += 1
+    return sorted(totals.values(), key=lambda x: (
+        -x["points"], tuple(-n for n in countback[x["full_name"]]), x["full_name"]
+    ))

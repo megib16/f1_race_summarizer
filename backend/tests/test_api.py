@@ -64,8 +64,8 @@ def test_results_laps_and_pits_have_deterministic_order(db):
 def test_championship_defaults_to_latest_season_and_does_not_mix_years(db):
     add_race(db, 1, "GP", "2026-03-01", 1)
     add_race(db, 2, "GP", "2027-03-01", 1)  # same name and round, different season
-    db.add(DriverResult(race_id=1, position=1, full_name="Old Champ", team="A"))
-    db.add(DriverResult(race_id=2, position=1, full_name="New Champ", team="B"))
+    db.add(DriverResult(race_id=1, position=1, full_name="Old Champ", team="A", points=25))
+    db.add(DriverResult(race_id=2, position=1, full_name="New Champ", team="B", points=25))
     db.commit()
 
     assert api.get_championship(None, None, db) == [{"full_name": "New Champ", "team": "B", "points": 25}]
@@ -76,10 +76,10 @@ def test_championship_defaults_to_latest_season_and_does_not_mix_years(db):
 def test_championship_points_include_sprint_and_no_fastest_lap_point(db):
     add_race(db, 1, "Sprint GP", "2026-03-01", 1)
     db.add_all([
-        DriverResult(race_id=1, position=1, full_name="Winner", team="A"),
-        DriverResult(race_id=1, position=11, full_name="Outside", team="B"),
-        SprintResult(race_id=1, position=1, full_name="Winner", team="A"),
-        SprintResult(race_id=1, position=9, full_name="Outside", team="B"),
+        DriverResult(race_id=1, position=1, full_name="Winner", team="A", points=25),
+        DriverResult(race_id=1, position=11, full_name="Outside", team="B", points=0),
+        SprintResult(race_id=1, position=1, full_name="Winner", team="A", points=8),
+        SprintResult(race_id=1, position=9, full_name="Outside", team="B", points=0),
     ])
     db.commit()
     # fastest lap recorded on the race must not add a point in 2026
@@ -95,10 +95,10 @@ def test_championship_uses_most_recent_team_and_breaks_ties_by_name(db):
     add_race(db, 1, "GP1", "2026-03-01", 1)
     add_race(db, 2, "GP2", "2026-03-08", 2)
     db.add_all([
-        DriverResult(race_id=2, position=2, full_name="Switcher", team="New Team"),
-        DriverResult(race_id=1, position=1, full_name="Switcher", team="Old Team"),
-        DriverResult(race_id=1, position=2, full_name="Alpha", team="X"),
-        DriverResult(race_id=2, position=1, full_name="Zulu", team="Y"),
+        DriverResult(race_id=2, position=2, full_name="Switcher", team="New Team", points=18),
+        DriverResult(race_id=1, position=1, full_name="Switcher", team="Old Team", points=25),
+        DriverResult(race_id=1, position=2, full_name="Alpha", team="X", points=18),
+        DriverResult(race_id=2, position=1, full_name="Zulu", team="Y", points=25),
     ])
     db.commit()
 
@@ -115,12 +115,12 @@ def seed_two_seasons(db):
     add_race(db, 2, "S26 R2", "2026-03-08", 2)
     add_race(db, 3, "S27 R1", "2027-03-01", 1)
     db.add_all([
-        DriverResult(race_id=1, position=1, full_name="Ann", team="A"),
-        DriverResult(race_id=2, position=1, full_name="Bob", team="B"),
-        SprintResult(race_id=2, position=1, full_name="Bob", team="B"),
-        DriverResult(race_id=3, position=1, full_name="Cy", team="C"),
-        SprintResult(race_id=3, position=2, full_name="Cy", team="C"),
-        SprintResult(race_id=3, position=1, full_name="Dee", team="D"),
+        DriverResult(race_id=1, position=1, full_name="Ann", team="A", points=25),
+        DriverResult(race_id=2, position=1, full_name="Bob", team="B", points=25),
+        SprintResult(race_id=2, position=1, full_name="Bob", team="B", points=8),
+        DriverResult(race_id=3, position=1, full_name="Cy", team="C", points=25),
+        SprintResult(race_id=3, position=2, full_name="Cy", team="C", points=7),
+        SprintResult(race_id=3, position=1, full_name="Dee", team="D", points=8),
     ])
     db.commit()
 
@@ -157,7 +157,7 @@ def test_through_round_does_not_match_same_round_in_other_season(db):
 def test_championship_edge_cases(db):
     assert api.get_championship(None, None, db) == []  # empty DB
     add_race(db, 1, "No Date", None, 1)
-    db.add(DriverResult(race_id=1, position=1, full_name="Ghost", team="G"))
+    db.add(DriverResult(race_id=1, position=1, full_name="Ghost", team="G", points=25))
     db.commit()
     assert api.get_championship(None, None, db) == []  # undated races never count
     assert api.get_championship(2026, None, db) == []
@@ -165,7 +165,7 @@ def test_championship_edge_cases(db):
 
 def test_sprint_only_driver_and_season_with_only_sprint_rows(db):
     add_race(db, 1, "GP", "2026-03-01", 1)
-    db.add(SprintResult(race_id=1, position=3, full_name="Sprinter", team="S"))
+    db.add(SprintResult(race_id=1, position=3, full_name="Sprinter", team="S", points=6))
     db.commit()
 
     assert api.get_championship(2026, None, db) == [{"full_name": "Sprinter", "team": "S", "points": 6}]
@@ -178,12 +178,16 @@ from models import CircuitMap
 
 def test_circuit_endpoint_returns_available_map(db):
     add_race(db, 1, "GP", "2026-03-01", 1)
-    db.add(CircuitMap(race_id=1, status="available", source="multiviewer", data='{"outline":[[0,0]],"corners":[]}'))
+    import json
+    from circuit import build_circuit_map
+    from tests.test_circuit import raw_payload
+    geometry, _ = build_circuit_map(raw_payload())
+    db.add(CircuitMap(race_id=1, status="available", source="multiviewer", data=json.dumps(geometry)))
     db.commit()
 
     body = api.get_circuit_map(1, db)
 
-    assert body["status"] == "available" and body["map"] == {"outline": [[0, 0]], "corners": []}
+    assert body["status"] == "available" and body["map"] == geometry
 
 
 def test_circuit_endpoint_reports_unavailable_with_reason(db):
@@ -205,3 +209,50 @@ def test_circuit_endpoint_survives_corrupt_stored_json_and_unknown_race(db):
     with pytest.raises(HTTPException) as exc:
         api.get_circuit_map(999, db)
     assert exc.value.status_code == 404
+
+
+def test_awarded_points_disqualifications_and_countback(db):
+    add_race(db, 1, "GP", "2026-01-01", 1)
+    add_race(db, 2, "GP2", "2026-01-08", 2)
+    db.add_all([
+        DriverResult(race_id=1, position=1, full_name="Zulu", points=12.5),
+        DriverResult(race_id=2, position=2, full_name="Alpha", points=12.5),
+        DriverResult(race_id=1, position=2, full_name="Excluded", points=18, status="Disqualified"),
+    ])
+    db.commit()
+    standings = api.get_championship(2026, None, db)
+    assert [r["full_name"] for r in standings] == ["Zulu", "Alpha", "Excluded"]
+    assert standings[0]["points"] == 12.5
+    assert standings[-1]["points"] == 0
+
+
+def test_legacy_historical_scoring_requires_source_points(db):
+    add_race(db, 1, "GP", "2024-01-01", 1)
+    db.add(DriverResult(race_id=1, position=1, full_name="A", points=None))
+    db.commit()
+    with pytest.raises(HTTPException) as exc:
+        api.get_championship(2024, None, db)
+    assert exc.value.status_code == 409
+
+
+@pytest.mark.parametrize("payload", ['[]', '{}', '{"outline": null}', '{"width": NaN}'])
+def test_valid_json_with_invalid_geometry_is_unavailable(db, payload):
+    add_race(db, 1, "GP", "2026-01-01", 1)
+    db.add(CircuitMap(race_id=1, status="available", data=payload))
+    db.commit()
+    assert api.get_circuit_map(1, db)["reason"] == "corrupt_data"
+
+
+def test_incomplete_classifications_do_not_publish_partial_standings(db):
+    from models import IngestState
+    add_race(db, 1, "GP", "2026-01-01", 1)
+    db.add(DriverResult(race_id=1, full_name="A", position=1, points=25))
+    state = IngestState(race_id=1, race_complete=True, sprint_required=True, sprint_complete=False)
+    db.add(state)
+    db.commit()
+    with pytest.raises(HTTPException) as exc:
+        api.get_championship(2026, None, db)
+    assert exc.value.status_code == 409
+    state.sprint_complete = True
+    db.commit()
+    assert api.get_championship(2026, None, db)[0]["points"] == 25

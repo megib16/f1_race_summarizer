@@ -5,3 +5,11 @@ cache
 frontend/node_modules
 frontend/.next
 .git
+**/.env*
+**/*.db
+**/*.db-*
+**/*.sqlite*
+**/*.pem
+**/.aws
+**/.codex
+**/.claude

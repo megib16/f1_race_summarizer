@@ -1,6 +1,8 @@
 import fastf1
 import os
 import datetime
+import logging
+from data_utils import finite_number
 
 import pandas as pd
 
@@ -33,25 +35,26 @@ def get_completed_races(year: int) -> list[dict]:
 def load_session(year: int, race: str):
     try:
         session = fastf1.get_session(year, race, "R")
-        session.load() 
+        # Refreshes must see upstream corrections rather than old parsed sessions.
+        with fastf1.Cache.disabled():
+            session.load(telemetry=False, messages=False)
         return session
- 
-    except Exception as e: 
-        print(f"Failed to load seesion!: {e}")
+
+    except Exception as e:
+        logging.exception("Race session load failed for %s %s", year, race)
     return None
 
 
 
 def get_race_results(session) -> list[dict]:
     cols = ["Abbreviation", "FullName", "TeamName", "Position", "GridPosition", "Time"]
-    if "FastestLapTime" in session.results.columns:
-        cols.append("FastestLapTime")
+    cols.extend(c for c in ("FastestLapTime", "Points", "Status") if c in session.results.columns)
     results = session.results[cols]
     return results.to_dict(orient="records")
 
-def get_lap_data(session) -> list[dict]: 
-    laps = session.laps[["Driver", "LapNumber", "LapTime", "Position", "Compound", "PitInTime", "PitOutTime"]] 
-    return laps.to_dict(orient = "records") 
+def get_lap_data(session) -> list[dict]:
+    laps = session.laps[["Driver", "LapNumber", "LapTime", "Position", "Compound", "PitInTime", "PitOutTime"]]
+    return laps.to_dict(orient = "records")
 
 def get_fastest_lap(session) -> dict:
     try:
@@ -59,14 +62,14 @@ def get_fastest_lap(session) -> dict:
         return {
             "driver": str(laps["Driver"]),
             "lap_time": str(laps["LapTime"]),
-            "lap_number": int(laps["LapNumber"]), 
+            "lap_number": int(laps["LapNumber"]),
             "team": str(laps["Team"])
-        } 
-    except Exception as e: 
-        print(f"No fastest lap recorded: {e}") 
-        return None     
-     
-    
+        }
+    except Exception as e:
+        logging.warning("No fastest lap recorded: %s", e)
+        return None
+
+
 
 def _compound_name(value) -> str:
     if value is None or pd.isna(value):
@@ -100,23 +103,32 @@ def get_pitstop_data(session) -> list[dict]:
 
 def get_weather_data(session) -> dict:
     weather = session.weather_data
+    def average(column):
+        values = weather[column] if column in weather else pd.Series(dtype=float)
+        value = finite_number(pd.to_numeric(values, errors="coerce").mean())
+        return round(value, 1) if value is not None else None
+
+    rain = weather["Rainfall"].dropna() if "Rainfall" in weather else pd.Series(dtype=bool)
     return {
-        "air_temp": round(float(weather["AirTemp"].mean()), 1),
-        "track_temp": round(float(weather["TrackTemp"].mean()), 1),
-        "rainfall": bool(weather["Rainfall"].any()),
+        "air_temp": average("AirTemp"),
+        "track_temp": average("TrackTemp"),
+        "rainfall": bool(rain.any()) if not rain.empty else None,
     }
+
 
 def load_sprint_session(year: int, race: str):
     try:
         session = fastf1.get_session(year, race, "S")
-        session.load()
+        with fastf1.Cache.disabled():
+            session.load(telemetry=False, messages=False)
         return session
     except Exception as e:
-        print(f"No sprint session for {race}: {e}")
+        logging.warning("Sprint session load failed for %s %s: %s", year, race, e)
     return None
 
 def get_sprint_results(session) -> list[dict]:
     cols = ["FullName", "TeamName", "Position"]
+    cols.extend(c for c in ("Points", "Status") if c in session.results.columns)
     results = session.results[cols]
     return results.to_dict(orient="records")
 
@@ -156,28 +168,3 @@ def get_race_info(session) -> dict:
         "round": int(event["RoundNumber"]),
         "total_laps": int(session.laps["LapNumber"].max()),
     }
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-

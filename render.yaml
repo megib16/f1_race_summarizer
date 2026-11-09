@@ -9,12 +9,15 @@ services:
     dockerfilePath: ./backend/Dockerfile
     dockerContext: .
     plan: free
+    # Free services do not support pre-deploy commands. Run the explicit migration before uvicorn.
+    dockerCommand: sh -c "python migrate.py && exec uvicorn api:app --host 0.0.0.0 --port 8000"
+    healthCheckPath: /health
     envVars:
+      - key: APP_ENV
+        value: production
       - key: DATABASE_URL
         fromDatabase:
           name: f1-races-db
           property: connectionString
-      - key: ANTHROPIC_API_KEY
-        sync: false
       - key: FRONTEND_URL
         sync: false

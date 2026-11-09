@@ -9,9 +9,13 @@ concurrency:
   group: fetch-races
   cancel-in-progress: false
 
+permissions:
+  contents: read
+
 jobs:
   fetch:
-    runs-on: self-hosted
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
     defaults:
       run:
         working-directory: backend
@@ -21,7 +25,11 @@ jobs:
         with:
           python-version: "3.11"
       - run: pip install -r requirements.txt
+      - run: python migrate.py
+        env:
+          APP_ENV: production
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
       - run: python pipeline.py
         env:
+          APP_ENV: production
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
-          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}

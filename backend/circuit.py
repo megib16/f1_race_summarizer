@@ -33,8 +33,10 @@ def build_circuit_map(raw):
     """Return (map_dict, None) on success or (None, reason) when no trustworthy map exists."""
     if not raw:
         return None, "no_data"
+    if not isinstance(raw, dict):
+        return None, "invalid_outline"
     xs, ys = raw.get("x") or [], raw.get("y") or []
-    if len(xs) != len(ys) or len(xs) < MIN_POINTS:
+    if not isinstance(xs, list) or not isinstance(ys, list) or len(xs) != len(ys) or not MIN_POINTS <= len(xs) <= 10000:
         return None, "invalid_outline"
     points = [(float(x), float(y)) for x, y in zip(xs, ys) if _finite_pair(x, y)]
     if len(points) != len(xs):
@@ -49,6 +51,8 @@ def build_circuit_map(raw):
         rotation = float(raw.get("rotation") or 0.0)
     except (TypeError, ValueError):
         rotation = 0.0
+    if not math.isfinite(rotation):
+        return None, "invalid_outline"
     angle = math.radians(rotation)
 
     def nearest(cx, cy):
@@ -60,17 +64,31 @@ def build_circuit_map(raw):
         return best_i, best_d
 
     corners = []
-    for c in raw.get("corners") or []:
+    raw_corners = raw.get("corners") or []
+    if not isinstance(raw_corners, list) or len(raw_corners) > 100:
+        return None, "invalid_outline"
+    for c in raw_corners:
+        if not isinstance(c, dict):
+            continue
         pos = c.get("trackPosition") or {}
+        if not isinstance(pos, dict):
+            continue
         cx, cy = pos.get("x"), pos.get("y")
         if not _finite_pair(cx, cy) or c.get("number") is None:
             continue
         index, dist = nearest(cx, cy)
         if dist > MAX_CORNER_OFFSET * span:
             continue  # unsupported by the outline: do not draw a misplaced label
-        a = math.radians(float(c.get("angle") or 0.0))
+        try:
+            corner_angle = float(c.get("angle") or 0.0)
+            number = int(c["number"])
+        except (TypeError, ValueError, OverflowError):
+            continue
+        if not math.isfinite(corner_angle) or number < 1:
+            continue
+        a = math.radians(corner_angle)
         lx, ly = cx + LABEL_OFFSET * span * math.cos(a), cy + LABEL_OFFSET * span * math.sin(a)
-        corners.append({"number": int(c["number"]), "letter": str(c.get("letter") or ""),
+        corners.append({"number": number, "letter": str(c.get("letter") or ""),
                         "index": index, "xy": (cx, cy), "label": (lx, ly)})
 
     # Start marker: the outline starts at the reference lap's start. Trust that only if

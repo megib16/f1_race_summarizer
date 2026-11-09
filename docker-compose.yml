@@ -3,13 +3,14 @@ services:
     build:
       context: .
       dockerfile: backend/Dockerfile
+    command: ["sh", "-c", "python migrate.py && exec uvicorn api:app --host 0.0.0.0 --port 8000"]
     ports:
-      - "8000:8000"
+      - "127.0.0.1:8000:8000"
     environment:
-      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
+      - DATABASE_URL=sqlite:////app/data/f1_races.db
     volumes:
-      - ./backend/f1_races.db:/app/backend/f1_races.db
-      - ./cache:/app/cache
+      - race-data:/app/data
+      - race-cache:/app/cache
 
   frontend:
     build:
@@ -18,6 +19,10 @@ services:
       args:
         NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:8000}
     ports:
-      - "3000:3000"
+      - "127.0.0.1:3000:3000"
     depends_on:
       - backend
+
+volumes:
+  race-data:
+  race-cache:

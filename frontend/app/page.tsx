@@ -1,58 +1,10 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useState } from "react";
+import { useRaceDashboard } from "./lib/use-race-dashboard";
 import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, ReferenceDot, BarChart, Bar } from "recharts";
-import { PitStop, biggestPositionGain, buildStints, byDateAscending, formatLapTime, formatTime } from "./lib/race-utils";
-import { CircuitResponse } from "./lib/circuit-utils";
-import CircuitMap, { CircuitState } from "./components/CircuitMap";
-
-const API = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
-
-async function getJson<T>(path: string): Promise<T> {
-  const res = await fetch(`${API}${path}`);
-  if (!res.ok) throw new Error(`${path} returned ${res.status}`);
-  return res.json();
-}
-
-interface Race {
-  race_id: number;
-  name: string;
-  location: string;
-  date: string;
-  round: number;
-  total_laps: number;
-  summary: string | null;
-  fastest_lap_driver: string | null;
-  fastest_lap_time: string | null;
-  fastest_lap_number: number | null;
-  fastest_lap_team: string | null;
-  air_temp: number | null;
-  track_temp: number | null;
-  rainfall: string | null;
-}
-
-interface DriverResult {
-  driver_id: number;
-  position: number;
-  grid_position: number | null;
-  full_name: string;
-  abbreviation: string;
-  team: string;
-  time: string;
-  fastest_lap: string;
-}
-
-interface LapEntry {
-  driver: string;
-  lap_number: number;
-  position: number;
-}
-
-interface ChampionshipEntry {
-  full_name: string;
-  team: string;
-  points: number;
-}
+import { biggestPositionGain, buildStints, formatLapTime, formatTime } from "./lib/race-utils";
+import CircuitMap from "./components/CircuitMap";
 
 function renderGridDelta(grid: number | null, finish: number) {
   if (grid == null || grid < 1) return "-"; // missing, or not a normal grid slot
@@ -94,79 +46,10 @@ const TYRECOLOURS: Record<string, string> = {
 
 
 export default function Home() {
-  const [race, setRace] = useState<Race | null>(null);
-  const [results, setResults] = useState<DriverResult[]>([]);
-  const [lapData, setLapData] = useState<LapEntry[]>([]);
+  const { race, results, lapData, pitstops, allRaces, championship, loadState,
+    championshipError, raceErrors, circuit, loadingSections, selectRace } = useRaceDashboard();
   const [showAllResults, setShowAllResults] = useState(false);
   const [showAllChampionship, setShowAllChampionship] = useState(false);
-  const [pitstops, setPitStops] = useState<PitStop[]>([]);
-  const [allRaces, setAllRaces] = useState<Race[]>([]);
-  const [championship, setChampionship] = useState<ChampionshipEntry[]>([]);
-
-  const [loadState, setLoadState] = useState<"loading" | "ready" | "empty" | "error">("loading");
-  const [championshipError, setChampionshipError] = useState(false);
-  const [raceError, setRaceError] = useState<string | null>(null);
-  const [circuit, setCircuit] = useState<CircuitState>({ kind: "loading" });
-  const requestId = useRef(0);
-
-  // Only the most recent selection may write state, so a slow response for a
-  // previously selected race can never overwrite the current one.
-  function selectRace(r: Race) {
-    const id = ++requestId.current;
-    setRace(r);
-    setRaceError(null);
-    setResults([]);
-    setLapData([]);
-    setPitStops([]);
-    setCircuit({ kind: "loading" });
-    getJson<CircuitResponse>(`/races/${r.race_id}/circuit`)
-      .then((c) => {
-        if (id !== requestId.current) return;
-        setCircuit(c.status === "available" && c.map ? { kind: "available", map: c.map } : { kind: "unavailable", reason: c.reason });
-      })
-      .catch(() => { if (id === requestId.current) setCircuit({ kind: "error" }); });
-    // Standings are scoped to the selected race's season and round, so an older
-    // race never shows standings from a later point in time.
-    const season = r.date?.slice(0, 4);
-    setChampionship([]);
-    setChampionshipError(false);
-    if (season && r.round != null) {
-      getJson<ChampionshipEntry[]>(`/championship?season=${season}&through_round=${r.round}`)
-        .then((data) => { if (id === requestId.current && Array.isArray(data)) setChampionship(data); })
-        .catch(() => { if (id === requestId.current) setChampionshipError(true); });
-    }
-    Promise.all([
-      getJson<DriverResult[]>(`/races/${r.race_id}/results`),
-      getJson<LapEntry[]>(`/races/${r.race_id}/laps`),
-      getJson<PitStop[]>(`/races/${r.race_id}/pits`),
-    ])
-      .then(([res, laps, pits]) => {
-        if (id !== requestId.current) return;
-        setResults([...res].sort((a, b) => a.position - b.position));
-        setLapData(laps);
-        setPitStops(pits);
-      })
-      .catch((e) => {
-        if (id !== requestId.current) return;
-        setRaceError(`Could not load data for ${r.name}: ${e.message}`);
-      });
-  }
-
-  useEffect(() => {
-    getJson<Race[]>("/races")
-      .then((races) => {
-        if (races.length === 0) {
-          setLoadState("empty");
-          return;
-        }
-        const sorted = byDateAscending(races);
-        setAllRaces(sorted);
-        setLoadState("ready");
-        // Latest by date, not by the API's row order.
-        selectRace(sorted[sorted.length - 1]);
-      })
-      .catch(() => setLoadState("error"));
-  }, []);
 
   const p1 = results.find((d) => d.position === 1);
   const p2 = results.find((d) => d.position === 2);
@@ -259,7 +142,7 @@ export default function Home() {
             </p>
           )}
           {loadState === "empty" && <p className="mt-6 text-xl text-gray-400">No races have been loaded yet.</p>}
-          {raceError && <p role="alert" className="mt-6 text-xl text-red-400">{raceError}</p>}
+          {raceErrors.map((error) => <p key={error} role="alert" className="mt-6 text-xl text-red-400">{error}</p>)}
 
           <h1 style={{ fontFamily: "BitcountSingle_Cursive-SemiBold" }} className="mt-6 text-4xl sm:text-6xl lg:text-7xl font-bold text-red-600 break-words">
             {race ? race.name.toUpperCase() : loadState === "loading" ? "Loading..." : "F1 RACES"}
@@ -326,6 +209,7 @@ export default function Home() {
         {/* 4a. Finishing order */}
         <section aria-label="Finishing order" style={{ fontFamily: "Playfair" }} className="mt-10 min-w-0">
           <h2 className={sectionTitle}>FINISHING ORDER</h2>
+          {loadingSections.results && <p role="status">Loading results…</p>}
           <p className={sectionNote}>
             Grid is the starting slot. +/- compares it with the finishing position. A missing time means no time was
             recorded; the reason (retirement or being lapped) is not stored.
@@ -366,6 +250,7 @@ export default function Home() {
         {/* 4b. Position progression */}
         <section aria-label="Position progression" style={{ fontFamily: "Playfair" }} className="mt-10 min-w-0">
           <h2 className={sectionTitle}>POSITION PROGRESSION</h2>
+          {loadingSections.laps && <p role="status">Loading lap positions…</p>}
           <p className={sectionNote}>
             Race position at the end of each lap. Dots mark inferred pit-lane exits (the lap shown is the first lap on the new tyres).
           </p>
@@ -464,11 +349,12 @@ export default function Home() {
           <h2 className={sectionTitle}>DRIVERS&apos; CHAMPIONSHIP</h2>
           {race && (
             <p className={sectionNote}>
-              {season} season, standings after round {race.round} ({race.name}). Race and sprint points as stored; 2026 points rules.
+              {season} season, standings after round {race.round} ({race.name}). Race and sprint points; ties use race finishing-position countback.
             </p>
           )}
-          {championshipError && <p role="alert" className="text-red-400 mb-2">Could not load standings.</p>}
-          {!championshipError && race && championship.length === 0 && <p className="text-gray-400 mb-2">No standings available.</p>}
+          {loadingSections.championship && <p role="status">Loading standings…</p>}
+          {championshipError && <p role="alert" className="text-red-400 mb-2">{championshipError}</p>}
+          {!championshipError && !loadingSections.championship && race && championship.length === 0 && <p className="text-gray-400 mb-2">No standings available.</p>}
           <div className="overflow-x-auto">
             <table className="w-full text-left border-collapse text-sm sm:text-xl">
               <thead>

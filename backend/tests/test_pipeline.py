@@ -17,7 +17,10 @@ def test_run_pending_races_only_fetches_missing_rounds(monkeypatch):
     TestSessionLocal = make_test_session_factory()
 
     db = TestSessionLocal()
-    db.add(Race(name="Already Fetched GP", round=1, date="2026-03-01"))
+    db.add(Race(race_id=1, name="Already Fetched GP", round=1, date="2026-03-01"))
+    db.flush()
+    from models import IngestState
+    db.add(IngestState(race_id=1, race_refreshed_at=datetime.date.today().isoformat(), race_complete=True))
     db.commit()
     db.close()
 
@@ -30,7 +33,6 @@ def test_run_pending_races_only_fetches_missing_rounds(monkeypatch):
             {"round": 2, "name": "New GP", "has_sprint": True},
         ],
     )
-    monkeypatch.setattr(pipeline.summarizer, "backfill_summaries", lambda: None)
     monkeypatch.setattr(pipeline, "backfill_circuit_maps", lambda **kw: [])
 
     fetched = []
@@ -59,7 +61,6 @@ def test_run_pending_races_does_not_skip_a_round_already_stored_for_another_seas
         pipeline.fetcher, "get_completed_races",
         lambda year: [{"round": 1, "name": "New Season GP", "has_sprint": False}],
     )
-    monkeypatch.setattr(pipeline.summarizer, "backfill_summaries", lambda: None)
     monkeypatch.setattr(pipeline, "backfill_circuit_maps", lambda **kw: [])
     fetched = []
     monkeypatch.setattr(pipeline, "run_pipeline", lambda year, race, has_sprint=False: fetched.append(race) or True)
@@ -75,7 +76,6 @@ def test_run_pending_races_reports_failures(monkeypatch):
         pipeline.fetcher, "get_completed_races",
         lambda year: [{"round": 1, "name": "Broken GP", "has_sprint": False}],
     )
-    monkeypatch.setattr(pipeline.summarizer, "backfill_summaries", lambda: None)
     monkeypatch.setattr(pipeline, "backfill_circuit_maps", lambda **kw: [])
     monkeypatch.setattr(pipeline, "run_pipeline", lambda *a, **k: False)
 
@@ -113,7 +113,7 @@ def install_fake_fetcher(monkeypatch, *, name="Test GP", date="2026-03-01", rnd=
     monkeypatch.setattr(f, "load_sprint_session", lambda y, r: FakeSession() if sprint != "unavailable" else None)
     monkeypatch.setattr(f, "get_sprint_results", lambda s: [
         {"Position": 1.0, "FullName": "A Driver", "TeamName": "Team A"},
-        {"Position": float("nan"), "FullName": "B Driver", "TeamName": "Team B"},
+        {"Position": 2.0, "FullName": "B Driver", "TeamName": "Team B"},
     ])
 
 
@@ -169,7 +169,7 @@ def test_run_pipeline_is_idempotent_keeps_race_id_and_sprint(monkeypatch, pipeli
     assert db.query(DriverResult).count() == 2
     assert db.query(PitStop).count() == 1
     assert db.query(LapPosition).count() == 1
-    assert db.query(SprintResult).count() == 1  # NaN sprint position skipped, not duplicated
+    assert db.query(SprintResult).count() == 2  # re-ingestion replaces rather than duplicates sprint rows
 
 
 def test_race_is_stored_when_sprint_is_unavailable(monkeypatch, pipeline_db):
@@ -201,7 +201,7 @@ def test_rerun_with_sprint_unavailable_keeps_existing_sprint_rows(monkeypatch, p
     assert pipeline.run_pipeline(2026, 1, has_sprint=True)
     assert pipeline.run_pipeline(2026, 1)  # has_sprint defaults to False
 
-    assert pipeline_db().query(SprintResult).count() == 1
+    assert pipeline_db().query(SprintResult).count() == 2
 
 
 import datetime
@@ -240,12 +240,12 @@ def test_sprint_added_on_later_run_via_backfill(monkeypatch, pipeline_db):
     state["up"] = True  # sprint now available
     much_later = later + datetime.timedelta(days=7)
     assert pipeline.backfill_sprints(2026, events, today=much_later) == []
-    assert pipeline_db().query(SprintResult).count() == 1
+    assert pipeline_db().query(SprintResult).count() == 2
 
     # Idempotent and no further loads once rows exist.
     n = len(calls)
     assert pipeline.backfill_sprints(2026, events, today=much_later) == []
-    assert pipeline_db().query(SprintResult).count() == 1
+    assert pipeline_db().query(SprintResult).count() == 2
     assert len(calls) == n
 
 
@@ -273,17 +273,17 @@ def test_sprint_attempt_metadata_is_reset_when_race_is_reingested(monkeypatch, p
     assert pipeline_db().query(RaceMeta).count() == 1
 
     install_fake_fetcher(monkeypatch)  # sprint available on the re-run
-    assert pipeline.run_pipeline(2026, 1, has_sprint=True)
+    assert pipeline.run_pipeline(2026, 1, has_sprint=True, force_sprint=True)
 
     db = pipeline_db()
-    assert db.query(SprintResult).count() == 1
-    assert db.query(RaceMeta).count() == 0
+    assert db.query(SprintResult).count() == 2
+    assert db.query(RaceMeta).one().sprint_attempts == 0
+    assert db.query(RaceMeta).one().sprint_last_attempt is None
 
 
 def test_run_pending_races_retries_missing_sprint_without_failing(monkeypatch, pipeline_db, capsys):
     events = ingest_without_sprint(monkeypatch, pipeline_db)
     monkeypatch.setattr(pipeline.fetcher, "get_completed_races", lambda year: events)
-    monkeypatch.setattr(pipeline.summarizer, "backfill_summaries", lambda: None)
     monkeypatch.setattr(pipeline, "backfill_circuit_maps", lambda **kw: [])
     install_fake_fetcher(monkeypatch)
     state = {"up": False}
@@ -295,7 +295,7 @@ def test_run_pending_races_retries_missing_sprint_without_failing(monkeypatch, p
 
     state["up"] = True
     assert pipeline.run_pending_races(2026, today=later + datetime.timedelta(days=7)) == []
-    assert pipeline_db().query(SprintResult).count() == 1
+    assert pipeline_db().query(SprintResult).count() == 2
 
 
 def test_backfill_ignores_non_sprint_events_and_unstored_races(monkeypatch, pipeline_db):
@@ -320,7 +320,7 @@ def test_same_name_in_a_different_season_is_a_separate_race(monkeypatch, pipelin
 # --- circuit maps ---------------------------------------------------------
 
 import json
-from models import CircuitMap
+from models import CircuitMap, IngestState
 from tests.test_circuit import raw_payload
 
 
@@ -447,3 +447,96 @@ def test_backfill_network_error_records_nothing_so_it_is_retried(monkeypatch, pi
 
     assert sorted(missing) == ["Barcelona GP", "Madrid GP"]
     assert pipeline_db().query(CircuitMap).count() == 0
+
+
+def test_malformed_optional_map_never_blocks_ingestion(monkeypatch, pipeline_db):
+    install_fake_fetcher(monkeypatch)
+    stub_circuit_source(monkeypatch)
+    monkeypatch.setattr(pipeline.circuit, "build_circuit_map", lambda raw: (_ for _ in ()).throw(ValueError("bad payload")))
+    assert pipeline.run_pipeline(2026, 1)
+    assert pipeline_db().query(Race).count() == 1
+    assert pipeline_db().query(CircuitMap).count() == 0
+
+
+def test_empty_and_smaller_classifications_preserve_existing_data(monkeypatch, pipeline_db):
+    install_fake_fetcher(monkeypatch)
+    assert pipeline.run_pipeline(2026, 1)
+    install_fake_fetcher(monkeypatch, results=[])
+    assert not pipeline.run_pipeline(2026, 1)
+    install_fake_fetcher(monkeypatch, results=[{"Position": 1, "FullName": "A Driver"}])
+    assert not pipeline.run_pipeline(2026, 1)
+    assert pipeline_db().query(DriverResult).count() == 2
+
+
+def test_refresh_policy_checks_recent_partial_and_legacy_races():
+    today = datetime.date(2026, 11, 9)
+    assert pipeline.refresh_due("2026-03-01", None, False, today)
+    assert pipeline.refresh_due("2026-11-08", "2026-11-08", True, today)
+    assert pipeline.refresh_due("2026-03-01", "2026-11-08", False, today)
+    assert not pipeline.refresh_due("2026-03-01", "2026-11-08", True, today)
+    assert pipeline.refresh_due("2026-03-01", "2026-11-02", True, today)
+
+
+def test_partial_sprint_is_retried_and_fuller_data_is_preserved(monkeypatch, pipeline_db):
+    from models import IngestState
+    install_fake_fetcher(monkeypatch)
+    monkeypatch.setattr(pipeline.fetcher, "get_sprint_results", lambda s: [
+        {"Position": 1, "FullName": "A", "TeamName": "T"},
+        {"Position": float("nan"), "FullName": "B", "TeamName": "T"},
+    ])
+    assert pipeline.run_pipeline(2026, 1, has_sprint=True)
+    assert not pipeline_db().query(IngestState).one().sprint_complete
+    monkeypatch.setattr(pipeline.fetcher, "get_sprint_results", lambda s: [
+        {"Position": 1, "FullName": "A", "TeamName": "T"},
+        {"Position": 2, "FullName": "B", "TeamName": "T"},
+    ])
+    events = [{"round": 1, "name": "Test GP", "has_sprint": True}]
+    later = datetime.date.today() + datetime.timedelta(days=2)
+    assert pipeline.backfill_sprints(2026, events, today=later) == []
+    assert pipeline_db().query(SprintResult).count() == 2
+    monkeypatch.setattr(pipeline.fetcher, "get_sprint_results", lambda s: [{"Position": 1, "FullName": "A", "TeamName": "T"}])
+    assert pipeline.backfill_sprints(2026, events, today=later + datetime.timedelta(days=7)) == ["Test GP"]
+    assert pipeline_db().query(SprintResult).count() == 2
+
+
+def test_weather_failure_is_optional_and_awarded_points_are_stored(monkeypatch, pipeline_db):
+    install_fake_fetcher(monkeypatch, results=[{
+        "Position": 1, "FullName": "A", "Abbreviation": "A", "TeamName": "T", "Time": "t",
+        "Points": 12.5, "Status": "Finished",
+    }])
+    monkeypatch.setattr(pipeline.fetcher, "get_weather_data", lambda s: (_ for _ in ()).throw(ValueError("weather missing")))
+    assert pipeline.run_pipeline(2026, 1)
+    db = pipeline_db()
+    assert db.query(Race).one().air_temp is None
+    assert db.query(Race).one().rainfall is None
+    assert db.query(DriverResult).one().points == 12.5
+
+
+def test_reingestion_with_sqlite_foreign_keys_enabled(monkeypatch, tmp_path):
+    from database import make_engine
+    from migrate import upgrade
+    engine = make_engine(f"sqlite:///{tmp_path / 'ingest.db'}")
+    upgrade(engine)
+    Session = sessionmaker(bind=engine)
+    monkeypatch.setattr(pipeline, "SessionLocal", Session)
+    install_fake_fetcher(monkeypatch)
+    assert pipeline.run_pipeline(2026, 1, has_sprint=True)
+    assert pipeline.run_pipeline(2026, 1, has_sprint=True)
+    with Session() as db:
+        assert db.query(Race).count() == 1
+        assert db.query(DriverResult).count() == 2
+    engine.dispose()
+
+
+def test_race_refresh_does_not_bypass_sprint_backoff(monkeypatch, pipeline_db):
+    ingest_without_sprint(monkeypatch, pipeline_db)
+    before = pipeline_db().query(RaceMeta).one()
+    previous = (before.sprint_attempts, before.sprint_last_attempt)
+    install_fake_fetcher(monkeypatch, sprint="unavailable")
+    calls = count_sprint_loads(monkeypatch, lambda: False)
+    assert pipeline.run_pipeline(2026, 1, has_sprint=True)
+    assert calls == []
+    after = pipeline_db().query(RaceMeta).one()
+    assert (after.sprint_attempts, after.sprint_last_attempt) == previous
+    assert pipeline.run_pipeline(2026, 1, has_sprint=True, force_sprint=True)
+    assert len(calls) == 1

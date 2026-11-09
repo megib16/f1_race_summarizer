@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, Float, ForeignKey, Text
+from sqlalchemy import Column, Integer, String, Float, ForeignKey, Text, Boolean, Index, func
 from sqlalchemy.orm import declarative_base
 
 Base = declarative_base()
@@ -23,7 +23,7 @@ class Race(Base):
 class DriverResult(Base):
     __tablename__ = "results"
     driver_id = Column(Integer, primary_key=True)
-    race_id = Column(Integer, ForeignKey("races.race_id"))
+    race_id = Column(Integer, ForeignKey("races.race_id"), index=True)
     position = Column(Integer)
     grid_position = Column(Integer)
     full_name = Column(String)
@@ -31,19 +31,23 @@ class DriverResult(Base):
     team = Column(String)
     time = Column(String)
     fastest_lap = Column(String)
+    points = Column(Float)
+    status = Column(String)
+    __table_args__ = (Index("uq_results_race_driver", "race_id", "full_name", unique=True),)
 
 class LapPosition(Base):
     __tablename__ = "lap_positions"
     id = Column(Integer, primary_key=True)
-    race_id = Column(Integer, ForeignKey("races.race_id"))
+    race_id = Column(Integer, ForeignKey("races.race_id"), index=True)
     driver = Column(String)
     lap_number = Column(Integer)
     position = Column(Integer) 
+    __table_args__ = (Index("uq_lap_positions_race_driver_lap", "race_id", "driver", "lap_number", unique=True),)
 
 class PitStop(Base):
     __tablename__ = "pitstops"
     id = Column(Integer, primary_key = True)
-    race_id = Column(Integer, ForeignKey("races.race_id"))
+    race_id = Column(Integer, ForeignKey("races.race_id"), index=True)
     driver = Column(String)
     lap_number = Column(Integer)
     old_compound = Column(String)
@@ -52,10 +56,13 @@ class PitStop(Base):
 class SprintResult(Base):
     __tablename__ = "sprint_results"
     id = Column(Integer, primary_key=True)
-    race_id = Column(Integer, ForeignKey("races.race_id"))
+    race_id = Column(Integer, ForeignKey("races.race_id"), index=True)
     position = Column(Integer)
     full_name = Column(String)
     team = Column(String)
+    points = Column(Float)
+    status = Column(String)
+    __table_args__ = (Index("uq_sprint_results_race_driver", "race_id", "full_name", unique=True),)
 
 
 class RaceMeta(Base):
@@ -94,3 +101,17 @@ def get_or_create_meta(db, race_id):
         meta = RaceMeta(race_id=race_id, sprint_attempts=0)
         db.add(meta)
     return meta
+
+
+# A date prefix is portable across SQLite and PostgreSQL; no duplicated season field.
+Index("uq_races_season_round", func.substr(Race.date, 1, 4), Race.round, unique=True)
+
+
+class IngestState(Base):
+    __tablename__ = "ingest_state"
+    race_id = Column(Integer, ForeignKey("races.race_id"), primary_key=True)
+    race_refreshed_at = Column(String)
+    race_complete = Column(Boolean, default=False)
+    sprint_refreshed_at = Column(String)
+    sprint_complete = Column(Boolean, default=False)
+    sprint_required = Column(Boolean, default=False)
