@@ -4,36 +4,7 @@ import math
 import pytest
 
 import circuit
-
-
-def square_outline(n_per_side=20, size=1000.0):
-    """Closed-ish square loop, counter-clockwise from (0, 0)."""
-    pts = []
-    for i in range(n_per_side):
-        pts.append((size * i / n_per_side, 0.0))
-    for i in range(n_per_side):
-        pts.append((size, size * i / n_per_side))
-    for i in range(n_per_side):
-        pts.append((size - size * i / n_per_side, size))
-    for i in range(n_per_side):
-        pts.append((0.0, size - size * i / n_per_side))
-    return pts
-
-
-def raw_payload(corners=None, rotation=0, outline=None):
-    pts = outline or square_outline()
-    return {
-        "circuitName": "Test Circuit",
-        "year": 2026,
-        "rotation": rotation,
-        "x": [p[0] for p in pts],
-        "y": [p[1] for p in pts],
-        "corners": corners if corners is not None else [
-            {"number": 1, "trackPosition": {"x": 1000.0, "y": 0.0}, "angle": 0},   # index 20
-            {"number": 2, "trackPosition": {"x": 1000.0, "y": 1000.0 - 50}, "angle": 90, "letter": "A"},
-            {"number": 3, "trackPosition": {"x": 0.0, "y": 1000.0}, "angle": 180},
-        ],
-    }
+from tests.fakes import square_outline, raw_payload
 
 
 def test_builds_closed_outline_with_numbered_corners_and_start():

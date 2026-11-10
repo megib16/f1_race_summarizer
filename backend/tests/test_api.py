@@ -180,7 +180,7 @@ def test_circuit_endpoint_returns_available_map(db):
     add_race(db, 1, "GP", "2026-03-01", 1)
     import json
     from circuit import build_circuit_map
-    from tests.test_circuit import raw_payload
+    from tests.fakes import raw_payload
     geometry, _ = build_circuit_map(raw_payload())
     db.add(CircuitMap(race_id=1, status="available", source="multiviewer", data=json.dumps(geometry)))
     db.commit()

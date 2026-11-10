@@ -15,6 +15,7 @@ from security import RateLimiter
 from schemas import CircuitData
 from pydantic import ValidationError
 from data_utils import finite_number
+from standings import Classification, StandingsUnavailable, calculate_standings
 from models import Race, DriverResult, SprintResult, LapPosition, PitStop, CircuitMap, IngestState
 
 @asynccontextmanager
@@ -224,29 +225,20 @@ def get_championship(season: Annotated[Optional[int], Query(ge=1950, le=2100)] =
         db.query(DriverResult, Race.date, Race.round).join(Race, Race.race_id == DriverResult.race_id)
     ).all()
     for r, date, rnd in race_rows:
-        events.append(((date, rnd or 0, 1), r))
+        events.append(Classification(
+            date=date, round=rnd or 0, is_race=True, full_name=r.full_name,
+            team=r.team, position=r.position, points=r.points, status=r.status,
+        ))
     sprint_rows = in_scope(
         db.query(SprintResult, Race.date, Race.round).join(Race, Race.race_id == SprintResult.race_id)
     ).all()
     for s, date, rnd in sprint_rows:
-        events.append(((date, rnd or 0, 0), s))
+        events.append(Classification(
+            date=date, round=rnd or 0, is_race=False, full_name=s.full_name,
+            team=s.team, position=s.position, points=s.points, status=s.status,
+        ))
 
-    totals: dict = {}
-    countback: dict = {}
-    for event, result in sorted(events, key=lambda e: e[0]):
-        name, team = result.full_name, result.team
-        disqualified = str(result.status or "").strip().lower() in {"disqualified", "excluded", "dsq"}
-        points = finite_number(result.points)
-        if disqualified:
-            points = 0
-        elif points is None:
-            raise HTTPException(status_code=409, detail="Re-ingest this season to load source-awarded points")
-        entry = totals.setdefault(name, {"full_name": name, "team": team, "points": 0})
-        entry["team"] = team
-        entry["points"] += points
-        finishes = countback.setdefault(name, [0] * 100)
-        if event[2] == 1 and not disqualified and result.position and 1 <= result.position <= 100:
-            finishes[result.position - 1] += 1
-    return sorted(totals.values(), key=lambda x: (
-        -x["points"], tuple(-n for n in countback[x["full_name"]]), x["full_name"]
-    ))
+    try:
+        return calculate_standings(events)
+    except StandingsUnavailable as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc

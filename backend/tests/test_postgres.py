@@ -10,7 +10,7 @@ from sqlalchemy.exc import IntegrityError
 import pipeline
 from migrate import upgrade, check_schema
 from models import Race, DriverResult, SprintResult
-from tests.test_pipeline import install_fake_fetcher
+from tests.fakes import install_fake_fetcher
 
 
 @pytest.mark.skipif(not os.environ.get("TEST_POSTGRES_URL"), reason="TEST_POSTGRES_URL is not configured")

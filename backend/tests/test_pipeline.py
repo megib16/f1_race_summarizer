@@ -4,6 +4,7 @@ from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
 import pipeline
+from tests.fakes import FakeSession, install_fake_fetcher
 from models import Base, Race, DriverResult, LapPosition, PitStop, SprintResult, RaceMeta
 
 
@@ -28,7 +29,7 @@ def test_run_pending_races_only_fetches_missing_rounds(monkeypatch):
     monkeypatch.setattr(
         pipeline.fetcher,
         "get_completed_races",
-        lambda year: [
+        lambda year, today=None: [
             {"round": 1, "name": "Already Fetched GP", "has_sprint": False},
             {"round": 2, "name": "New GP", "has_sprint": True},
         ],
@@ -39,7 +40,7 @@ def test_run_pending_races_only_fetches_missing_rounds(monkeypatch):
     monkeypatch.setattr(
         pipeline,
         "run_pipeline",
-        lambda year, race, has_sprint=False: fetched.append((race, has_sprint)) or True,
+        lambda year, race, has_sprint=False, today=None: fetched.append((race, has_sprint)) or True,
     )
 
     failed = pipeline.run_pending_races(2026)
@@ -59,11 +60,11 @@ def test_run_pending_races_does_not_skip_a_round_already_stored_for_another_seas
     monkeypatch.setattr(pipeline, "SessionLocal", TestSessionLocal)
     monkeypatch.setattr(
         pipeline.fetcher, "get_completed_races",
-        lambda year: [{"round": 1, "name": "New Season GP", "has_sprint": False}],
+        lambda year, today=None: [{"round": 1, "name": "New Season GP", "has_sprint": False}],
     )
     monkeypatch.setattr(pipeline, "backfill_circuit_maps", lambda **kw: [])
     fetched = []
-    monkeypatch.setattr(pipeline, "run_pipeline", lambda year, race, has_sprint=False: fetched.append(race) or True)
+    monkeypatch.setattr(pipeline, "run_pipeline", lambda year, race, has_sprint=False, today=None: fetched.append(race) or True)
 
     pipeline.run_pending_races(2027)
 
@@ -74,47 +75,12 @@ def test_run_pending_races_reports_failures(monkeypatch):
     monkeypatch.setattr(pipeline, "SessionLocal", make_test_session_factory())
     monkeypatch.setattr(
         pipeline.fetcher, "get_completed_races",
-        lambda year: [{"round": 1, "name": "Broken GP", "has_sprint": False}],
+        lambda year, today=None: [{"round": 1, "name": "Broken GP", "has_sprint": False}],
     )
     monkeypatch.setattr(pipeline, "backfill_circuit_maps", lambda **kw: [])
     monkeypatch.setattr(pipeline, "run_pipeline", lambda *a, **k: False)
 
     assert pipeline.run_pending_races(2026) == ["Broken GP"]
-
-
-class FakeSession:
-    pass
-
-
-def install_fake_fetcher(monkeypatch, *, name="Test GP", date="2026-03-01", rnd=1,
-                         results=None, fastest_lap="default", sprint="none"):
-    """Replace every fetcher call used by run_pipeline so no FastF1/network is touched."""
-    f = pipeline.fetcher
-    results = results if results is not None else [
-        {"Position": 1.0, "GridPosition": 2.0, "FullName": "A Driver", "TeamName": "Team A", "Abbreviation": "ADR", "Time": "t1"},
-        {"Position": 2.0, "GridPosition": float("nan"), "FullName": "B Driver", "TeamName": "Team B", "Abbreviation": "BDR", "Time": "t2"},
-    ]
-    monkeypatch.setattr(f, "load_session", lambda y, r: FakeSession())
-    monkeypatch.setattr(f, "get_race_results", lambda s: results)
-    monkeypatch.setattr(f, "get_lap_data", lambda s: [
-        {"Driver": "ADR", "LapNumber": 1, "Position": 1.0},
-        {"Driver": "BDR", "LapNumber": 1, "Position": float("nan")},
-    ])
-    monkeypatch.setattr(f, "get_pitstop_data", lambda s: [
-        {"Driver": "ADR", "LapNumber": 5, "OldCompound": "SOFT", "NewCompound": "HARD"},
-    ])
-    monkeypatch.setattr(f, "get_race_info", lambda s: {
-        "name": name, "location": "Somewhere", "date": date, "round": rnd, "total_laps": 50,
-    })
-    monkeypatch.setattr(f, "get_fastest_lap", lambda s: (
-        {"driver": "ADR", "lap_time": "x", "lap_number": 3, "team": "Team A"} if fastest_lap == "default" else fastest_lap
-    ))
-    monkeypatch.setattr(f, "get_weather_data", lambda s: {"air_temp": 20.0, "track_temp": 30.0, "rainfall": False})
-    monkeypatch.setattr(f, "load_sprint_session", lambda y, r: FakeSession() if sprint != "unavailable" else None)
-    monkeypatch.setattr(f, "get_sprint_results", lambda s: [
-        {"Position": 1.0, "FullName": "A Driver", "TeamName": "Team A"},
-        {"Position": 2.0, "FullName": "B Driver", "TeamName": "Team B"},
-    ])
 
 
 @pytest.fixture
@@ -281,9 +247,9 @@ def test_sprint_attempt_metadata_is_reset_when_race_is_reingested(monkeypatch, p
     assert db.query(RaceMeta).one().sprint_last_attempt is None
 
 
-def test_run_pending_races_retries_missing_sprint_without_failing(monkeypatch, pipeline_db, capsys):
+def test_run_pending_races_retries_missing_sprint_without_failing(monkeypatch, pipeline_db, caplog):
     events = ingest_without_sprint(monkeypatch, pipeline_db)
-    monkeypatch.setattr(pipeline.fetcher, "get_completed_races", lambda year: events)
+    monkeypatch.setattr(pipeline.fetcher, "get_completed_races", lambda year, today=None: events)
     monkeypatch.setattr(pipeline, "backfill_circuit_maps", lambda **kw: [])
     install_fake_fetcher(monkeypatch)
     state = {"up": False}
@@ -291,7 +257,7 @@ def test_run_pending_races_retries_missing_sprint_without_failing(monkeypatch, p
     later = TODAY + datetime.timedelta(days=3)
 
     assert pipeline.run_pending_races(2026, today=later) == []  # not a failure
-    assert "Sprint results still unavailable for: Test GP" in capsys.readouterr().out
+    assert "Sprint results still unavailable for: Test GP" in caplog.text
 
     state["up"] = True
     assert pipeline.run_pending_races(2026, today=later + datetime.timedelta(days=7)) == []
@@ -321,7 +287,7 @@ def test_same_name_in_a_different_season_is_a_separate_race(monkeypatch, pipelin
 
 import json
 from models import CircuitMap, IngestState
-from tests.test_circuit import raw_payload
+from tests.fakes import raw_payload
 
 
 def stub_circuit_source(monkeypatch, payload=..., key=15, error=None):
@@ -540,3 +506,69 @@ def test_race_refresh_does_not_bypass_sprint_backoff(monkeypatch, pipeline_db):
     assert (after.sprint_attempts, after.sprint_last_attempt) == previous
     assert pipeline.run_pipeline(2026, 1, has_sprint=True, force_sprint=True)
     assert len(calls) == 1
+
+
+def test_late_database_failure_rolls_back_parent_and_all_children(monkeypatch, pipeline_db):
+    install_fake_fetcher(monkeypatch, name="Original")
+    assert pipeline.run_pipeline(2026, 1)
+    with pipeline_db() as db:
+        race_id = db.query(Race).one().race_id
+        original_names = sorted(r.full_name for r in db.query(DriverResult))
+    install_fake_fetcher(monkeypatch, name="Replacement", results=[
+        {"Position": p, "GridPosition": p, "FullName": "Duplicate", "Abbreviation": "D", "TeamName": "T", "Time": "t"}
+        for p in (1, 2)
+    ])
+    assert not pipeline.run_pipeline(2026, 1)
+    with pipeline_db() as db:
+        assert db.query(Race).one().name == "Original"
+        assert db.query(Race).one().race_id == race_id
+        assert sorted(r.full_name for r in db.query(DriverResult)) == original_names
+        assert db.query(LapPosition).count() == 1
+        assert db.query(PitStop).count() == 1
+
+
+def test_network_downloads_do_not_hold_database_connections(monkeypatch, pipeline_db):
+    from sqlalchemy import event
+    engine = pipeline_db.kw["bind"]
+    active = [0]
+    violations = []
+    def checkout(*args):
+        active[0] += 1
+    def checkin(*args):
+        active[0] -= 1
+    event.listen(engine, "checkout", checkout)
+    event.listen(engine, "checkin", checkin)
+    install_fake_fetcher(monkeypatch)
+    stub_circuit_source(monkeypatch)
+    monkeypatch.setattr(pipeline.fetcher, "load_session_info", lambda *args: FakeSession())
+    for name in ("load_session", "load_sprint_session", "load_session_info", "fetch_circuit_payload"):
+        original = getattr(pipeline.fetcher, name)
+        def guard(*args, _name=name, _original=original, **kwargs):
+            if active[0]:
+                violations.append(_name)
+            return _original(*args, **kwargs)
+        monkeypatch.setattr(pipeline.fetcher, name, guard)
+    try:
+        today = datetime.date(2026, 11, 10)
+        assert pipeline.run_pipeline(2026, 1, has_sprint=True, today=today)
+        with pipeline_db.begin() as db:
+            db.query(CircuitMap).delete()
+        assert pipeline.backfill_circuit_maps(today=today) == []
+        events = [{"round": 1, "name": "Test GP", "has_sprint": True}]
+        assert pipeline.backfill_sprints(2026, events, today=today + datetime.timedelta(days=7)) == []
+        assert violations == []
+        assert active[0] == 0
+    finally:
+        event.remove(engine, "checkout", checkout)
+        event.remove(engine, "checkin", checkin)
+
+
+def test_invalid_source_identity_is_rejected_before_writing(monkeypatch, pipeline_db):
+    install_fake_fetcher(monkeypatch, results=[{
+        "Position": 1, "GridPosition": 1, "FullName": None, "Abbreviation": "A",
+        "TeamName": "Team", "Time": "t",
+    }])
+    assert not pipeline.run_pipeline(2026, 1)
+    with pipeline_db() as db:
+        assert db.query(Race).count() == 0
+        assert db.query(DriverResult).count() == 0

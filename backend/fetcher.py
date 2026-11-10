@@ -11,14 +11,14 @@ CACHE_DIR = os.path.join(BASE_DIR, "cache")
 os.makedirs(CACHE_DIR, exist_ok=True)
 fastf1.Cache.enable_cache(CACHE_DIR)
 
-def get_completed_races(year: int) -> list[dict]:
+def get_completed_races(year: int, today=None) -> list[dict]:
     """Races in the season schedule whose race day has already passed.
 
     Compared by date only (not time) so a race that's still in progress
     today never gets fetched with partial results.
     """
     schedule = fastf1.get_event_schedule(year)
-    today = datetime.date.today()
+    today = today or datetime.date.today()
     races = []
     for _, event in schedule.iterrows():
         if int(event["RoundNumber"]) == 0:

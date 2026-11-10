@@ -111,3 +111,5 @@ uv pip compile backend/requirements-dev.in --python-version 3.11 --universal --g
 ```
 
 CI runs dependency audits for the frontend and locked backend runtime.
+
+Code boundaries and the process for adding migrations are documented in [docs/architecture.md](docs/architecture.md).

@@ -64,3 +64,21 @@ def test_real_database_copy_migrates(tmp_path):
     check_schema(engine)
     with engine.connect() as conn:
         assert conn.execute(text("SELECT count(*) FROM races")).scalar() == before
+
+
+def test_historical_migration_does_not_read_current_models(tmp_path, monkeypatch):
+    from sqlalchemy import Column, Integer, Table
+    from models import Base
+    future_table = Table("future_feature", Base.metadata, Column("id", Integer, primary_key=True))
+    def forbidden(*args, **kwargs):
+        raise AssertionError("A historical migration must not read live model metadata")
+    monkeypatch.setattr(Base.metadata, "create_all", forbidden)
+    engine = make_engine(f"sqlite:///{tmp_path / 'frozen.db'}")
+    try:
+        upgrade(engine)
+        check_schema(engine)
+        assert "future_feature" not in inspect(engine).get_table_names()
+        assert "races" in inspect(engine).get_table_names()
+    finally:
+        Base.metadata.remove(future_table)
+        engine.dispose()
